@@ -18,20 +18,56 @@ type Request[Header, Param, Query, Body any] struct {
 	Body   Body
 }
 
-// execution carries per-request state shared by the whole typed chain (the
-// typed middlewares and the handler): the Carrier plus a parse-once cache keyed
-// by the concrete Request type. Keying by reflect.Type (not its String()) avoids
-// the cross-package name collision the previous string key was prone to.
+// execution carries per-request state shared by the whole typed chain (the typed
+// middlewares and the handler): the Carrier plus a parse-once cache keyed by the
+// concrete Request type. Keying by reflect.Type (not its String()) avoids the
+// cross-package name collision the previous string key was prone to.
+//
+// The cache stores its first Request shape inline (key0/val0) and allocates a map
+// only when a second, differently-shaped part is cached — e.g. a typed middleware
+// that binds only a header while the handler binds the full request. Most routes
+// bind a single shape, so the hot path allocates no cache map.
 type execution struct {
 	Carrier
-	cache map[reflect.Type]any
 	// cfg is the route's App configuration (nil = read the process-wide globals),
 	// carried here so the binding/validation path can reach it without a global.
 	cfg *appConfig
+
+	key0     reflect.Type
+	val0     any
+	overflow map[reflect.Type]any
 }
 
 func newExecution(c Carrier, cfg *appConfig) *execution {
-	return &execution{Carrier: c, cache: map[reflect.Type]any{}, cfg: cfg}
+	return &execution{Carrier: c, cfg: cfg} //nolint:exhaustruct
+}
+
+// cacheGet returns the parsed request stored under key, if any.
+func (ex *execution) cacheGet(key reflect.Type) (any, bool) {
+	if ex.key0 == key {
+		return ex.val0, true
+	}
+	if ex.overflow != nil {
+		v, ok := ex.overflow[key]
+		return v, ok
+	}
+	return nil, false
+}
+
+// cacheSet stores a parsed request under key, keeping the first shape inline and
+// allocating the overflow map only for additional shapes.
+func (ex *execution) cacheSet(key reflect.Type, val any) {
+	switch {
+	case ex.key0 == nil:
+		ex.key0, ex.val0 = key, val
+	case ex.key0 == key:
+		ex.val0 = val
+	default:
+		if ex.overflow == nil {
+			ex.overflow = map[reflect.Type]any{}
+		}
+		ex.overflow[key] = val
+	}
 }
 
 // cachedRequest parses the request at most once per execution, so a typed
@@ -40,7 +76,7 @@ func newExecution(c Carrier, cfg *appConfig) *execution {
 // are cached on the Carrier so re-binding stays cheap.
 func cachedRequest[Header, Param, Query, Body any](ex *execution) (Request[Header, Param, Query, Body], error) {
 	key := reflect.TypeFor[Request[Header, Param, Query, Body]]()
-	if cached, ok := ex.cache[key]; ok {
+	if cached, ok := ex.cacheGet(key); ok {
 		if req, ok := cached.(Request[Header, Param, Query, Body]); ok {
 			return req, nil
 		}
@@ -51,7 +87,7 @@ func cachedRequest[Header, Param, Query, Body any](ex *execution) (Request[Heade
 		return req, err
 	}
 
-	ex.cache[key] = req
+	ex.cacheSet(key, req)
 	return req, nil
 }
 
