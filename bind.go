@@ -20,13 +20,13 @@ import (
 // and maps them onto the typed structs using the same struct tags the OpenAPI
 // generator reads (`header`/`uri`/`form`/`json`), so one Request type binds
 // identically on every adapter and can never drift from the docs.
-func parseRequest[Header, Param, Query, Body any](c Carrier) (Request[Header, Param, Query, Body], error) {
+func parseRequest[Header, Param, Query, Body any](cfg *appConfig, c Carrier) (Request[Header, Param, Query, Body], error) {
 	binders := bindKit()
 	req := Request[Header, Param, Query, Body]{} //nolint:exhaustruct
 
 	if shouldBind[Header, struct{}]() {
 		values := collectValues(reflect.TypeFor[Header](), c.HeaderValues, tagHeader)
-		if err := binders.bind(&req.Header, values, tagHeader); err != nil {
+		if err := binders.bind(cfg, &req.Header, values, tagHeader); err != nil {
 			return req, err
 		}
 	}
@@ -37,17 +37,17 @@ func parseRequest[Header, Param, Query, Body any](c Carrier) (Request[Header, Pa
 			}
 			return nil
 		}, tagURI)
-		if err := binders.bind(&req.Param, values, tagURI); err != nil {
+		if err := binders.bind(cfg, &req.Param, values, tagURI); err != nil {
 			return req, err
 		}
 	}
 	if shouldBind[Query, struct{}]() {
-		if err := binders.bind(&req.Query, c.Query(), tagForm); err != nil {
+		if err := binders.bind(cfg, &req.Query, c.Query(), tagForm); err != nil {
 			return req, err
 		}
 	}
 	if shouldBind[Body, struct{}]() {
-		if err := bindBody(c, &req.Body, binders); err != nil {
+		if err := bindBody(cfg, c, &req.Body, binders); err != nil {
 			return req, err
 		}
 	}
@@ -57,28 +57,28 @@ func parseRequest[Header, Param, Query, Body any](c Carrier) (Request[Header, Pa
 
 // bindBody chooses the body binder from the content type, falling back to the
 // struct shape when the content type is absent or unrecognised.
-func bindBody[Body any](c Carrier, body *Body, binders *kit) error {
+func bindBody[Body any](cfg *appConfig, c Carrier, body *Body, binders *kit) error {
 	t := reflect.TypeFor[Body]()
 
 	switch ct := c.ContentType(); {
 	case ct == mimeMultipart || (ct == "" && hasFileField(t)):
-		return bindMultipart(c, body, binders)
+		return bindMultipart(cfg, c, body, binders)
 	case ct == mimeURLEncoded:
-		return bindURLEncoded(c, body, binders)
+		return bindURLEncoded(cfg, c, body, binders)
 	case ct == mimeJSON:
-		return bindJSON(c, body)
+		return bindJSON(cfg, c, body)
 	default:
 		if isFormBody(t) {
 			if hasFileField(t) {
-				return bindMultipart(c, body, binders)
+				return bindMultipart(cfg, c, body, binders)
 			}
-			return bindURLEncoded(c, body, binders)
+			return bindURLEncoded(cfg, c, body, binders)
 		}
-		return bindJSON(c, body)
+		return bindJSON(cfg, c, body)
 	}
 }
 
-func bindJSON[Body any](c Carrier, body *Body) error {
+func bindJSON[Body any](cfg *appConfig, c Carrier, body *Body) error {
 	raw, err := c.Body()
 	if err != nil {
 		return badRequest("failed to read request body", nil)
@@ -88,10 +88,10 @@ func bindJSON[Body any](c Carrier, body *Body) error {
 			return jsonBindError(err)
 		}
 	}
-	return runValidation(body, tagJSON)
+	return runValidation(cfg, body, tagJSON)
 }
 
-func bindURLEncoded[Body any](c Carrier, body *Body, binders *kit) error {
+func bindURLEncoded[Body any](cfg *appConfig, c Carrier, body *Body, binders *kit) error {
 	raw, err := c.Body()
 	if err != nil {
 		return badRequest("failed to read request body", nil)
@@ -100,10 +100,10 @@ func bindURLEncoded[Body any](c Carrier, body *Body, binders *kit) error {
 	if err != nil {
 		return badRequest("invalid form body", nil)
 	}
-	return binders.bind(body, values, tagForm)
+	return binders.bind(cfg, body, values, tagForm)
 }
 
-func bindMultipart[Body any](c Carrier, body *Body, binders *kit) error {
+func bindMultipart[Body any](cfg *appConfig, c Carrier, body *Body, binders *kit) error {
 	mf, err := c.MultipartForm()
 	if err != nil {
 		return badRequest("invalid multipart form", nil)
@@ -112,7 +112,7 @@ func bindMultipart[Body any](c Carrier, body *Body, binders *kit) error {
 		return err
 	}
 	assignFiles(reflect.ValueOf(body).Elem(), mf.File)
-	return runValidation(body, tagForm)
+	return runValidation(cfg, body, tagForm)
 }
 
 // collectValues walks the struct (recursing into embedded structs, exactly like
@@ -263,11 +263,11 @@ func newKit() *kit {
 
 // bind decodes values onto dst using the decoder for tagKey, then runs the
 // configured validator (if any) over the result.
-func (k *kit) bind(dst any, values url.Values, tagKey string) error {
+func (k *kit) bind(cfg *appConfig, dst any, values url.Values, tagKey string) error {
 	if err := k.decode(dst, values, tagKey); err != nil {
 		return err
 	}
-	return runValidation(dst, tagKey)
+	return runValidation(cfg, dst, tagKey)
 }
 
 func (k *kit) decode(dst any, values url.Values, tagKey string) error {

@@ -58,23 +58,26 @@ func SetValidator(v Validator) {
 	validatorConfigured = true
 }
 
-// runValidation applies the configured validator to a freshly bound part. dst is
-// the pointer the binder filled; validationTarget collapses any extra pointer
-// level a generic Body type may add before the value reaches the validator. When
-// no validator is configured the request is accepted without validation.
-func runValidation(dst any, source string) error {
-	if validatorImpl == nil {
+// runValidation applies the configured validator to a freshly bound part. cfg is
+// the route's App configuration (nil = read the process-wide globals); dst is the
+// pointer the binder filled; validationTarget collapses any extra pointer level a
+// generic Body type may add before the value reaches the validator. When no
+// validator is configured the request is accepted without validation.
+func runValidation(cfg *appConfig, dst any, source string) error {
+	v, _ := cfg.validatorOrGlobal()
+	if v == nil {
 		return nil
 	}
-	return validatorImpl.Validate(validationTarget(dst), source)
+	return v.Validate(validationTarget(dst), source)
 }
 
 // warnIfNoValidator logs a single warning the first time a route that declares
 // `binding` rules is served while no validator is configured, so the common
 // "forgot to call SetValidator" mistake is loud instead of silently skipping
-// every rule. SetValidator(nil) opts out explicitly and silences it.
+// every rule. SetValidator(nil) (or an App's WithValidator(nil)) opts out
+// explicitly and silences it.
 func warnIfNoValidator(route Route) {
-	if validatorConfigured || !route.hasRules {
+	if _, configured := route.cfg.validatorOrGlobal(); configured || !route.hasRules {
 		return
 	}
 	noValidatorWarning.Do(func() {

@@ -23,6 +23,10 @@ type Route struct {
 	// envelope shapes the success body (and its documented schema). nil means
 	// "inherit the process-wide default" (see resolveEnvelope).
 	envelope ResponseEnvelope
+	// cfg is the App configuration this route reads its Validator/ErrorParser/
+	// body-cap from. nil means "read the process-wide globals" — how a route built
+	// without [WithApp] keeps the original behaviour. Set via [WithApp].
+	cfg *appConfig
 
 	// hasRules is precomputed at construction: true when any bound request part
 	// carries a validation rule tag. The request path reads only this bool (never
@@ -203,7 +207,7 @@ func newBaseRoute[Header, Param, Query, Body, Response any](
 // handler.
 func (route Route) Invoke(c Carrier) {
 	warnIfNoValidator(route)
-	ex := newExecution(c)
+	ex := newExecution(c, route.cfg)
 	for _, mw := range route.typedBefore {
 		if err := mw(ex); err != nil {
 			renderError(ex, err, route.errorMapper)
@@ -246,6 +250,17 @@ func (route Route) Tags() []string {
 }
 
 func (route Route) SuccessStatus() int { return route.successStatus }
+
+// MaxRequestBytes reports the per-route request body cap configured via an App
+// ([WithApp] + [WithMaxRequestBytes]). ok is false when the route inherits no
+// App-level cap, in which case an adapter falls back to its own
+// DefaultMaxRequestBytes. A returned value of 0 means "no cap".
+func (route Route) MaxRequestBytes() (limit int64, ok bool) {
+	if route.cfg == nil || !route.cfg.hasMaxBody {
+		return 0, false
+	}
+	return route.cfg.maxBodyBytes, true
+}
 
 // --- shared render helpers (used by handler closures) -----------------------
 

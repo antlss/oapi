@@ -25,10 +25,13 @@ type Request[Header, Param, Query, Body any] struct {
 type execution struct {
 	Carrier
 	cache map[reflect.Type]any
+	// cfg is the route's App configuration (nil = read the process-wide globals),
+	// carried here so the binding/validation path can reach it without a global.
+	cfg *appConfig
 }
 
-func newExecution(c Carrier) *execution {
-	return &execution{Carrier: c, cache: map[reflect.Type]any{}}
+func newExecution(c Carrier, cfg *appConfig) *execution {
+	return &execution{Carrier: c, cache: map[reflect.Type]any{}, cfg: cfg}
 }
 
 // cachedRequest parses the request at most once per execution, so a typed
@@ -43,7 +46,7 @@ func cachedRequest[Header, Param, Query, Body any](ex *execution) (Request[Heade
 		}
 	}
 
-	req, err := parseRequest[Header, Param, Query, Body](ex.Carrier)
+	req, err := parseRequest[Header, Param, Query, Body](ex.cfg, ex.Carrier)
 	if err != nil {
 		return req, err
 	}
