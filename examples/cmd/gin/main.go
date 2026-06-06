@@ -17,7 +17,7 @@ import (
 	"github.com/antlss/oapi"
 	"github.com/antlss/oapi/examples/api"
 	"github.com/antlss/oapi/examples/docsui"
-	"github.com/antlss/oapi/examples/playground"
+	"github.com/antlss/oapi/validation/playground"
 
 	ginadapter "github.com/antlss/oapi/adapter/gin"
 )

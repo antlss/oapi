@@ -14,6 +14,7 @@
 //   - github.com/antlss/oapi/adapter/fiber — Fiber v2
 //
 // Validation is a pluggable seam ([Validator] + [SetValidator]); a ready
-// go-playground/validator implementation lives in the examples
-// (examples/playground) as a reference, so the library ships no validator.
+// go-playground/validator implementation lives in its own lean module
+// (github.com/antlss/oapi/validation/playground) as a reference, so the library
+// ships no validator.
 package oapi

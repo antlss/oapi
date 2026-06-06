@@ -3,13 +3,18 @@
 // serve the OpenAPI document with SpecHandler.
 //
 // Request body size is bounded by Fiber itself via fiber.Config.BodyLimit
-// (default 4 MiB), which rejects oversized bodies before the handler runs, so
-// this adapter needs no extra cap. fasthttp also cleans up multipart temp files
-// automatically at the end of each request.
+// (default 4 MiB), which rejects oversized bodies before the handler runs.
+// In addition, this adapter honours an App-configured per-route body cap
+// (route.MaxRequestBytes) and the package-level DefaultMaxRequestBytes so the
+// three adapters agree on the cap; see maxBodyFor and the carrier's read path.
+// fasthttp also cleans up multipart temp files automatically at the end of each
+// request.
 package fiber
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -21,6 +26,40 @@ import (
 
 	"github.com/antlss/oapi"
 )
+
+// jsonContentType matches net/http's WriteJSON content type byte-for-byte so the
+// success path stays identical across adapters.
+const jsonContentType = "application/json; charset=utf-8"
+
+// DefaultMaxRequestBytes caps how many bytes the adapter reads from a request
+// body (JSON, urlencoded and multipart) in addition to Fiber's own
+// fiber.Config.BodyLimit, guarding against memory/disk exhaustion. Set it to 0
+// to disable the extra cap (relying solely on BodyLimit). Override before
+// registering routes. A per-route App cap (route.MaxRequestBytes) takes
+// precedence over this fallback.
+var DefaultMaxRequestBytes int64 = 10 << 20 // 10 MiB
+
+// errBodyTooLarge is returned from the body/multipart read path when the request
+// exceeds the resolved cap. The core's binder turns any Body/MultipartForm error
+// into a 400 "failed to read request body" (the same status net/http's
+// MaxBytesReader error produces there), so the three adapters agree on the
+// outcome. It is reported to the core, never to fiber's DefaultErrorHandler.
+var errBodyTooLarge = errors.New("request body too large")
+
+// recordedErrorKey is the c.Locals key under which RecordError accumulates
+// non-fatal errors, giving fiber logging middleware a place to read them (fiber
+// has no native c.Errors slice like gin). Exported as a typed key would widen
+// the API surface; a package-private string keeps it adapter-internal yet
+// inspectable via c.Locals(fiber-internal lookups in this package).
+const recordedErrorKey = "oapi.recordedErrors"
+
+// RecordedErrors returns the non-fatal errors stashed by RecordError on this
+// fiber context, in order, for logging middleware. It is the accessor the old
+// dead errs slice lacked.
+func RecordedErrors(c *fiber.Ctx) []error {
+	errs, _ := c.Locals(recordedErrorKey).([]error)
+	return errs
+}
 
 // Register mounts a single oapi.Route on a Fiber router. Optional native Fiber
 // handlers run before the route handler.
@@ -58,10 +97,30 @@ func SpecHandler(reg *oapi.Registry) fiber.Handler {
 
 func handlerFor(route oapi.Route) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		cr := &carrier{c: c} //nolint:exhaustruct
+		// Seed the user context from the fasthttp request context so Context()
+		// (which returns c.UserContext()) carries the request's cancellation and
+		// deadline instead of fiber's default context.Background(). A later
+		// SetContext (e.g. from typed middleware) still overrides this, and value
+		// lookups fall through to the request ctx's user values. *fasthttp.RequestCtx
+		// satisfies context.Context (Deadline/Done/Err/Value); in fasthttp v1.51
+		// Done() tracks server shutdown (non-nil only under a listening server),
+		// so this is the most cancellation the framework can offer today.
+		c.SetUserContext(c.Context())
+
+		cr := &carrier{c: c, maxBody: maxBodyFor(route)} //nolint:exhaustruct
 		route.Invoke(cr)
 		return cr.writeErr
 	}
+}
+
+// maxBodyFor resolves the body cap for a route: an App-configured per-route cap
+// (route.MaxRequestBytes, where 0 means "no cap") takes precedence over the
+// package-level DefaultMaxRequestBytes fallback. Kept identical across adapters.
+func maxBodyFor(route oapi.Route) int64 {
+	if limit, ok := route.MaxRequestBytes(); ok {
+		return limit
+	}
+	return DefaultMaxRequestBytes
 }
 
 // toFiberPath converts the canonical route syntax to Fiber's: :id stays, and
@@ -78,16 +137,16 @@ func toFiberPath(path string) string {
 
 // carrier adapts *fiber.Ctx to oapi.Carrier.
 type carrier struct {
-	c *fiber.Ctx
+	c       *fiber.Ctx
+	maxBody int64 // request body cap in bytes; <= 0 means unlimited
 
 	queryOnce sync.Once
 	query     url.Values
 	bodyOnce  sync.Once
 	body      []byte
+	bodyErr   error
 
 	writeErr error
-	aborted  bool
-	errs     []error
 }
 
 func (a *carrier) Method() string            { return a.c.Method() }
@@ -138,17 +197,49 @@ func (a *carrier) ContentType() string {
 func (a *carrier) Body() ([]byte, error) {
 	a.bodyOnce.Do(func() {
 		// fasthttp reuses the body buffer after the handler returns; copy it.
-		a.body = append([]byte(nil), a.c.Body()...)
+		body := a.c.Body()
+		// Honour the resolved per-adapter cap on top of fiber's BodyLimit so the
+		// three adapters agree. fasthttp has no MaxBytesReader, but the body is
+		// already fully buffered here, so a length check is equivalent: reject
+		// (matching net/http's MaxBytesReader behaviour) rather than truncate.
+		if a.maxBody > 0 && int64(len(body)) > a.maxBody {
+			a.bodyErr = errBodyTooLarge
+			return
+		}
+		a.body = append([]byte(nil), body...)
 	})
-	return a.body, nil
+	return a.body, a.bodyErr
 }
 
-func (a *carrier) MultipartForm() (*multipart.Form, error) { return a.c.MultipartForm() }
+func (a *carrier) MultipartForm() (*multipart.Form, error) {
+	// Bound the whole upload the same way Body does. fasthttp buffers the request
+	// before the handler runs, so Request().Header.ContentLength() is the decoded
+	// body size; reject oversized multipart bodies before parsing.
+	if a.maxBody > 0 && int64(a.c.Request().Header.ContentLength()) > a.maxBody {
+		return nil, errBodyTooLarge
+	}
+	return a.c.MultipartForm()
+}
 
 func (a *carrier) SetHeader(key, value string) { a.c.Set(key, value) }
 
 func (a *carrier) WriteJSON(status int, body any) error {
-	a.writeErr = a.c.Status(status).JSON(body)
+	// Marshal first (rather than c.JSON) so an encode failure is caught before the
+	// status/body are committed and surfaces as the same sanitized 500 the
+	// net/http and gin adapters emit. The bytes also match net/http exactly
+	// (encoding/json, no trailing newline, "application/json; charset=utf-8").
+	raw, err := json.Marshal(body)
+	a.c.Set("Content-Type", jsonContentType)
+	if err != nil {
+		// Write the sanitized body ourselves and DO NOT return the raw error:
+		// returning it would hand the unmarshalable value's message to fiber's
+		// DefaultErrorHandler, which could leak it. The Send error (if any) is
+		// what we surface to the handler chain.
+		a.writeErr = a.c.Status(http.StatusInternalServerError).
+			Send([]byte(`{"error":{"message":"failed to encode response"}}`))
+		return err
+	}
+	a.writeErr = a.c.Status(status).Send(raw)
 	return a.writeErr
 }
 
@@ -163,8 +254,23 @@ func (a *carrier) WriteEmpty(status int) error {
 	return nil
 }
 
+// Context returns the per-request context. handlerFor seeds the user context
+// from the fasthttp request context, so this carries the request's cancellation
+// and deadline (rather than fiber's default context.Background()); a SetContext
+// from middleware overrides it while still chaining value lookups.
 func (a *carrier) Context() context.Context       { return a.c.UserContext() }
 func (a *carrier) SetContext(ctx context.Context) { a.c.SetUserContext(ctx) }
 
-func (a *carrier) Abort()                { a.aborted = true }
-func (a *carrier) RecordError(err error) { a.errs = append(a.errs, err) }
+// Abort is a no-op: fiber has no adapter-side after-middleware for this carrier
+// to skip (native handlers registered before the route run to completion before
+// it). The core calls it when rendering an error; gin uses it for real.
+func (a *carrier) Abort() {}
+
+// RecordError accumulates a non-fatal error on the fiber context (read back via
+// RecordedErrors) for logging middleware; fiber has no native c.Errors slice
+// like gin, so we stash them under a well-known Locals key. Best-effort, per the
+// Carrier contract.
+func (a *carrier) RecordError(err error) {
+	prev, _ := a.c.Locals(recordedErrorKey).([]error)
+	a.c.Locals(recordedErrorKey, append(prev, err))
+}

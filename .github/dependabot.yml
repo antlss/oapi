@@ -1,7 +1,7 @@
 version: 2
 
 # Multi-module Go workspace: each module has its own go.mod and is tracked
-# independently. GitHub Actions workflows are tracked as a fifth ecosystem.
+# independently. GitHub Actions workflows are tracked as a final ecosystem.
 updates:
   - package-ecosystem: gomod
     directory: "/"
@@ -23,6 +23,15 @@ updates:
 
   - package-ecosystem: gomod
     directory: "/adapter/fiber"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - go
+
+  - package-ecosystem: gomod
+    directory: "/validation/playground"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10

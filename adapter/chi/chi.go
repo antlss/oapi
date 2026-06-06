@@ -1,8 +1,7 @@
-// Package nethttp adapts the framework-agnostic oapi core onto the net/http
-// standard library (Go 1.22+ method-aware ServeMux patterns). Register oapi
-// routes with Register / RegisterAll and serve the OpenAPI document with
-// SpecHandler.
-package nethttp
+// Package chi adapts the framework-agnostic oapi core onto the go-chi/chi v5
+// router. Register oapi routes with Register / RegisterAll and serve the
+// generated OpenAPI document with SpecHandler.
+package chi
 
 import (
 	"bytes"
@@ -16,10 +15,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/antlss/oapi"
 )
 
-// Middleware is a standard net/http wrapping middleware.
+// Middleware is a standard net/http wrapping middleware, as used by chi.
 type Middleware func(http.Handler) http.Handler
 
 // maxMultipartMemory bounds the in-memory portion of a parsed multipart form;
@@ -30,24 +31,28 @@ const maxMultipartMemory = 32 << 20
 // body (JSON, urlencoded and multipart), guarding against memory/disk
 // exhaustion from oversized uploads. Set it to 0 to disable the cap (e.g. when
 // you enforce limits with your own middleware). Override before registering
-// routes.
+// routes. A per-route App cap ([oapi.WithApp] + [oapi.WithMaxRequestBytes])
+// takes precedence over this value.
 var DefaultMaxRequestBytes int64 = 10 << 20 // 10 MiB
 
-// Register mounts a single oapi.Route on a ServeMux using a method-aware
-// pattern. Optional native middlewares wrap the route handler.
-func Register(mux *http.ServeMux, route oapi.Route, native ...Middleware) {
-	var handler http.Handler = handlerFor(route)
-	for i := len(native) - 1; i >= 0; i-- {
-		handler = native[i](handler)
+// Register mounts a single oapi.Route on a chi.Router using a method-aware
+// pattern. Optional native chi middlewares wrap the route handler.
+func Register(router chi.Router, route oapi.Route, native ...Middleware) {
+	r := router
+	if len(native) > 0 {
+		mws := make([]func(http.Handler) http.Handler, len(native))
+		for i, m := range native {
+			mws[i] = m
+		}
+		r = router.With(mws...)
 	}
-	pattern := route.Method() + " " + toStdPath(route.Path())
-	mux.Handle(pattern, handler)
+	r.MethodFunc(route.Method(), toChiPath(route.Path()), handlerFor(route))
 }
 
-// RegisterAll mounts every route on the mux.
-func RegisterAll(mux *http.ServeMux, routes ...oapi.Route) {
+// RegisterAll mounts every route on the router.
+func RegisterAll(router chi.Router, routes ...oapi.Route) {
 	for _, route := range routes {
-		Register(mux, route)
+		Register(router, route)
 	}
 }
 
@@ -60,13 +65,12 @@ func SpecHandler(reg *oapi.Registry) http.HandlerFunc {
 	)
 	return func(w http.ResponseWriter, _ *http.Request) {
 		once.Do(func() { raw, err = reg.JSON() })
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"message":"failed to render openapi spec"}`))
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write(raw)
 	}
 }
@@ -79,9 +83,8 @@ func handlerFor(route oapi.Route) http.HandlerFunc {
 	}
 }
 
-// maxBodyFor resolves the body cap for a route: an App-configured per-route cap
-// (route.MaxRequestBytes, where 0 means "no cap") takes precedence over the
-// package-level DefaultMaxRequestBytes fallback. Kept identical across adapters.
+// maxBodyFor resolves the request body cap for a route: the per-route App cap
+// when one is configured, otherwise the package DefaultMaxRequestBytes.
 func maxBodyFor(route oapi.Route) int64 {
 	if limit, ok := route.MaxRequestBytes(); ok {
 		return limit
@@ -89,22 +92,22 @@ func maxBodyFor(route oapi.Route) int64 {
 	return DefaultMaxRequestBytes
 }
 
-// toStdPath converts the canonical route syntax (:id, *path) to net/http
-// wildcard syntax ({id}, {path...}).
-func toStdPath(path string) string {
+// toChiPath converts the canonical route syntax to chi's: :id params become
+// {id}, and a *path catch-all becomes chi's trailing "/*" wildcard.
+func toChiPath(path string) string {
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {
 		switch {
 		case strings.HasPrefix(segment, ":"):
 			segments[i] = "{" + segment[1:] + "}"
 		case strings.HasPrefix(segment, "*"):
-			segments[i] = "{" + segment[1:] + "...}"
+			segments[i] = "*"
 		}
 	}
 	return strings.Join(segments, "/")
 }
 
-// carrier adapts net/http to oapi.Carrier.
+// carrier adapts net/http (driven by chi) to oapi.Carrier.
 type carrier struct {
 	w       http.ResponseWriter
 	r       *http.Request
@@ -116,14 +119,24 @@ type carrier struct {
 	body      []byte
 	bodyErr   error
 
-	// errs collects RecordError calls for logging middleware (see Errors).
-	errs []error
+	aborted bool
+	errs    []error
 }
 
 func (a *carrier) Method() string                    { return a.r.Method }
 func (a *carrier) Header(name string) string         { return a.r.Header.Get(name) }
 func (a *carrier) HeaderValues(name string) []string { return a.r.Header.Values(name) }
-func (a *carrier) Param(name string) string          { return a.r.PathValue(name) }
+
+func (a *carrier) Param(name string) string {
+	if v := chi.URLParam(a.r, name); v != "" {
+		return v
+	}
+	// A catch-all segment (`*path`) is registered as chi's anonymous "*"
+	// wildcard (see toChiPath), so the original name no longer resolves. Fall
+	// back to the wildcard value so catch-all params bind the same as on the
+	// other adapters.
+	return chi.URLParam(a.r, "*")
+}
 
 func (a *carrier) Query() url.Values {
 	a.queryOnce.Do(func() { a.query = a.r.URL.Query() })
@@ -212,11 +225,8 @@ func (a *carrier) SetContext(ctx context.Context) {
 	a.r = a.r.WithContext(ctx)
 }
 
-// Abort is a no-op: net/http has no adapter-side after-middleware to skip (any
-// native Middleware wraps the whole handler, so it cannot observe an abort from
-// inside). The core calls it when rendering an error; gin uses it for real.
-func (a *carrier) Abort()                {}
+func (a *carrier) Abort()                { a.aborted = true }
 func (a *carrier) RecordError(err error) { a.errs = append(a.errs, err) }
 
-// Errors exposes recorded errors for net/http logging middleware.
+// Errors exposes recorded errors for chi logging middleware.
 func (a *carrier) Errors() []error { return a.errs }

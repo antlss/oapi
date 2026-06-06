@@ -41,9 +41,13 @@ go get github.com/antlss/oapi/adapter/fiber
 ```
 
 The default validator (go-playground/validator-backed, reads the `binding` tag)
-currently lives in the example package
-`github.com/antlss/oapi/examples/playground`. It is slated to move to a
-dedicated `validation/playground` module — see the [CHANGELOG](CHANGELOG.md).
+lives in its own lean module
+`github.com/antlss/oapi/validation/playground`, so you can `go get` it without
+pulling in the demo's dependencies:
+
+```sh
+go get github.com/antlss/oapi/validation/playground
+```
 
 ## Quickstart
 
@@ -62,8 +66,7 @@ import (
 	nethttp "github.com/antlss/oapi/adapter/nethttp"
 
 	// The default validator. The core ships none; installing one is opt-in.
-	// (This sub-package is slated to move to validation/playground.)
-	"github.com/antlss/oapi/examples/playground"
+	"github.com/antlss/oapi/validation/playground"
 )
 
 // The request struct is the single source of truth: the `header`/`uri`/`form`/

@@ -6,16 +6,22 @@ package gin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/antlss/oapi"
 )
+
+// jsonContentType matches net/http's WriteJSON content type byte-for-byte so the
+// success path stays identical across adapters.
+const jsonContentType = "application/json; charset=utf-8"
 
 // DefaultMaxRequestBytes caps how many bytes the adapter reads from a request
 // body (JSON, urlencoded and multipart), guarding against memory/disk
@@ -60,10 +66,20 @@ func SpecHandler(reg *oapi.Registry) gin.HandlerFunc {
 
 func handlerFor(route oapi.Route) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cr := &carrier{c: c, maxBody: DefaultMaxRequestBytes} //nolint:exhaustruct
+		cr := &carrier{c: c, maxBody: maxBodyFor(route)} //nolint:exhaustruct
 		defer cr.cleanup()
 		route.Invoke(cr)
 	}
+}
+
+// maxBodyFor resolves the body cap for a route: an App-configured per-route cap
+// (route.MaxRequestBytes, where 0 means "no cap") takes precedence over the
+// package-level DefaultMaxRequestBytes fallback. Kept identical across adapters.
+func maxBodyFor(route oapi.Route) int64 {
+	if limit, ok := route.MaxRequestBytes(); ok {
+		return limit
+	}
+	return DefaultMaxRequestBytes
 }
 
 // toGinPath is the identity: the canonical route syntax (:id, *path) is gin's.
@@ -83,9 +99,17 @@ func (a *carrier) Header(name string) string { return a.c.GetHeader(name) }
 func (a *carrier) HeaderValues(name string) []string {
 	return a.c.Request.Header.Values(name)
 }
-func (a *carrier) Param(name string) string { return a.c.Param(name) }
-func (a *carrier) Query() url.Values        { return a.c.Request.URL.Query() }
-func (a *carrier) ContentType() string      { return a.c.ContentType() }
+func (a *carrier) Param(name string) string {
+	// gin captures a catch-all (*param) value WITH a leading slash (e.g. a
+	// `/assets/*path` request for /assets/img/logo.png yields "/img/logo.png"),
+	// while the net/http and fiber adapters — and the generated OpenAPI {param}
+	// docs — use no leading slash ("img/logo.png"). A single-segment :param can
+	// never contain a slash, so trimming one leading "/" only ever normalises a
+	// catch-all, making `*path` bind identically on every adapter.
+	return strings.TrimPrefix(a.c.Param(name), "/")
+}
+func (a *carrier) Query() url.Values   { return a.c.Request.URL.Query() }
+func (a *carrier) ContentType() string { return a.c.ContentType() }
 
 func (a *carrier) Body() ([]byte, error) {
 	a.bodyOnce.Do(func() {
@@ -122,7 +146,18 @@ func (a *carrier) cleanup() {
 func (a *carrier) SetHeader(key, value string) { a.c.Header(key, value) }
 
 func (a *carrier) WriteJSON(status int, body any) error {
-	a.c.JSON(status, body)
+	// Marshal first (rather than c.JSON, which writes a 200 then fails mid-stream
+	// on an unmarshalable body) so an encode failure is caught before the
+	// status/body are committed and surfaces as the same sanitized 500 the
+	// net/http and fiber adapters emit. The bytes also match net/http exactly
+	// (encoding/json, no trailing newline, "application/json; charset=utf-8").
+	raw, err := json.Marshal(body)
+	if err != nil {
+		a.c.Data(http.StatusInternalServerError, jsonContentType,
+			[]byte(`{"error":{"message":"failed to encode response"}}`))
+		return err
+	}
+	a.c.Data(status, jsonContentType, raw)
 	return nil
 }
 

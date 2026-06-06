@@ -9,9 +9,9 @@ require (
 	github.com/antlss/oapi v0.0.0
 	github.com/antlss/oapi/adapter/fiber v0.0.0
 	github.com/antlss/oapi/adapter/gin v0.0.0
+	github.com/antlss/oapi/validation/playground v0.0.0
 	github.com/getkin/kin-openapi v0.139.0
 	github.com/gin-gonic/gin v1.12.0
-	github.com/go-playground/validator/v10 v10.30.3
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/stretchr/testify v1.11.1
 )
@@ -30,6 +30,7 @@ require (
 	github.com/go-playground/form/v4 v4.3.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -76,4 +77,5 @@ replace (
 	github.com/antlss/oapi => ..
 	github.com/antlss/oapi/adapter/fiber => ../adapter/fiber
 	github.com/antlss/oapi/adapter/gin => ../adapter/gin
+	github.com/antlss/oapi/validation/playground => ../validation/playground
 )
