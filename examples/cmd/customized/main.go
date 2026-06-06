@@ -24,7 +24,7 @@ import (
 	"github.com/antlss/oapi"
 	"github.com/antlss/oapi/examples/api"
 	"github.com/antlss/oapi/examples/docsui"
-	"github.com/antlss/oapi/validation/playground"
+	"github.com/antlss/oapi/examples/validation"
 
 	nethttpadapter "github.com/antlss/oapi/adapter/nethttp"
 )
@@ -41,7 +41,7 @@ func main() {
 	flag.Parse()
 
 	// Process-wide configuration, installed once before serving.
-	oapi.SetValidator(playground.New())
+	oapi.SetValidator(validation.New())
 	// A custom success envelope for the whole API: {"success": true, "data": ...}.
 	oapi.SetResponseEnvelope(oapi.KeyedEnvelope{
 		DataKey:   "data",

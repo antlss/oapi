@@ -13,7 +13,7 @@ import (
 	"github.com/antlss/oapi"
 	"github.com/antlss/oapi/examples/api"
 	"github.com/antlss/oapi/examples/docsui"
-	"github.com/antlss/oapi/validation/playground"
+	"github.com/antlss/oapi/examples/validation"
 
 	fiberadapter "github.com/antlss/oapi/adapter/fiber"
 )
@@ -32,7 +32,7 @@ func main() {
 
 	// Install the default validator so `binding` rules are enforced. The core
 	// ships none, so this opt-in is how an app turns validation on.
-	oapi.SetValidator(playground.New())
+	oapi.SetValidator(validation.New())
 
 	app := fiber.New()
 
