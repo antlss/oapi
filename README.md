@@ -249,6 +249,12 @@ upload/download, paging, security schemes, typed middleware, the full error
 model, custom envelopes, and a fully populated `Registry`. The same route set is
 mounted on net/http, gin, and Fiber by `examples/cmd/{nethttp,gin,fiber}`.
 
+Two commands demonstrate configuration. `examples/cmd/customized` installs a custom
+response envelope and error shape **process-wide** via `oapi.Set*`. `examples/cmd/scoped`
+does the same per `oapi.App` instead: it serves two differently configured groups
+(`/v1` and `/v2`, distinct envelope + error shape) in one process with **no** global
+`Set*` call, scoping both the wire bytes and the generated docs.
+
 ## License
 
 [MIT](LICENSE) © 2026 antlss
