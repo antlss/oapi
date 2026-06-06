@@ -1,0 +1,60 @@
+name: Release
+
+# Lightweight placeholder release workflow. It fires on a core-module version
+# tag (vX.Y.Z) and re-runs the full test matrix as a release gate.
+#
+# NOTE: this is a multi-module repo. Submodule versions are released with their
+# own path-prefixed tags, pushed separately, e.g.:
+#   adapter/gin/vX.Y.Z
+#   adapter/fiber/vX.Y.Z
+#   examples/vX.Y.Z
+# This workflow intentionally only gates the core `vX.Y.Z` tag. Publishing
+# (GoReleaser, changelog, GitHub Release, etc.) can be wired in later.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: release tests (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - "."
+          - "adapter/gin"
+          - "adapter/fiber"
+          - "examples"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+          cache-dependency-path: "${{ matrix.module }}/go.sum"
+
+      - name: go build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+      - name: go test (race)
+        working-directory: ${{ matrix.module }}
+        run: go test -race ./...
+
+  # Placeholder for the actual publish step (GoReleaser / GitHub Release).
+  # Submodule tags (adapter/gin/vX.Y.Z, adapter/fiber/vX.Y.Z, examples/vX.Y.Z)
+  # are pushed separately and handled by their own tag pushes.
+  release:
+    name: release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: release placeholder
+        run: echo "Tag ${GITHUB_REF_NAME} passed the release gate. Wire up publishing here."

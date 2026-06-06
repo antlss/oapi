@@ -1,0 +1,82 @@
+# golangci-lint configuration for the oapi multi-module workspace.
+# Production-grade but not pedantic: each adapter/example module is linted
+# separately in CI (working-directory per module), so this config is shared by
+# all of them.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - revive
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - ineffassign
+    - gocritic
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # too noisy for readability-first struct layout
+      - shadow         # shadowing err/ctx is idiomatic and intentional here
+
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: var-naming
+      - name: indent-error-flow
+      - name: error-return
+      - name: error-naming
+      - name: context-as-argument
+      - name: receiver-naming
+      - name: unreachable-code
+      - name: redefines-builtin-id
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - hugeParam      # struct sizes here favour clarity over copy cost
+      - rangeValCopy
+      - unnamedResult
+      - ifElseChain
+
+  misspell:
+    locale: US
+
+  goimports:
+    local-prefixes: github.com/antlss/oapi
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Tests are allowed to be longer, noisier, and less strictly documented.
+    - path: _test\.go
+      linters:
+        - errcheck
+        - unparam
+        - gocritic
+        - revive
+
+    # Generated / tool entrypoints need a relaxed bar.
+    - path: tools/
+      linters:
+        - revive
+        - unparam
+
+  # Show all issues from a run, not just new ones.
+  new: false
