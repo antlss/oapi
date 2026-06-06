@@ -51,10 +51,13 @@ func main() {
 	// A custom, uniform error shape for the whole API (see api.AppError).
 	oapi.SetErrorParser(api.AppErrorParser{})
 
-	mux := http.NewServeMux()
-	nethttpadapter.RegisterAll(mux, api.Routes()...)
+	// Wire dependencies and build the route set.
+	h := api.NewHandler(api.NewCatalogService())
 
-	reg := api.Registry()
+	mux := http.NewServeMux()
+	nethttpadapter.RegisterAll(mux, h.Routes()...)
+
+	reg := h.Registry()
 	mux.HandleFunc("GET /openapi.json", nethttpadapter.SpecHandler(reg))
 	mux.HandleFunc("GET /{$}", htmlPage(docsui.IndexPage))
 	mux.HandleFunc("GET /redoc", htmlPage(docsui.RedocPage))

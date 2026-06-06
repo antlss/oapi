@@ -18,7 +18,6 @@ import (
 	fiberadapter "github.com/antlss/oapi/adapter/fiber"
 )
 
-// htmlPage serves a static HTML documentation page.
 func htmlPage(html string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set("Content-Type", docsui.ContentType)
@@ -34,12 +33,14 @@ func main() {
 	// ships none, so this opt-in is how an app turns validation on.
 	oapi.SetValidator(validation.New())
 
+	// Wire dependencies and build the route set.
+	h := api.NewHandler(api.NewCatalogService())
+
 	app := fiber.New()
 
-	// The same api.Routes() as the gin/nethttp examples.
-	fiberadapter.RegisterAll(app, api.Routes()...)
+	fiberadapter.RegisterAll(app, h.Routes()...)
 
-	reg := api.Registry()
+	reg := h.Registry()
 	app.Get("/openapi.json", fiberadapter.SpecHandler(reg))
 	app.Get("/", htmlPage(docsui.IndexPage))
 	app.Get("/redoc", htmlPage(docsui.RedocPage))

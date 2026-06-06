@@ -17,7 +17,6 @@ import (
 	nethttpadapter "github.com/antlss/oapi/adapter/nethttp"
 )
 
-// htmlPage serves a static HTML documentation page.
 func htmlPage(html string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", docsui.ContentType)
@@ -33,12 +32,14 @@ func main() {
 	// ships none, so this opt-in is how an app turns validation on.
 	oapi.SetValidator(validation.New())
 
+	// Wire dependencies and build the route set.
+	h := api.NewHandler(api.NewCatalogService())
+
 	mux := http.NewServeMux()
 
-	// The same api.Routes() as the gin/fiber examples.
-	nethttpadapter.RegisterAll(mux, api.Routes()...)
+	nethttpadapter.RegisterAll(mux, h.Routes()...)
 
-	reg := api.Registry()
+	reg := h.Registry()
 	mux.HandleFunc("GET /openapi.json", nethttpadapter.SpecHandler(reg))
 	mux.HandleFunc("GET /{$}", htmlPage(docsui.IndexPage)) // exact "/" only, not a catch-all
 	mux.HandleFunc("GET /redoc", htmlPage(docsui.RedocPage))

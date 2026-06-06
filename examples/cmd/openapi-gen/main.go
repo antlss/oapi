@@ -14,7 +14,10 @@ package main
 
 import (
 	"github.com/antlss/oapi/examples/api"
-	"github.com/antlss/oapi/tools/gen_doc"
+	gendoc "github.com/antlss/oapi/tools/gen_doc"
 )
 
-func main() { gendoc.Main(api.Registry()) }
+func main() {
+	h := api.NewHandler(api.NewCatalogService())
+	gendoc.Main(h.Registry())
+}

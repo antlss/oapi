@@ -12,17 +12,23 @@ import (
 	"github.com/antlss/oapi/examples/api"
 )
 
+// newHandler wires the real in-memory service — the same composition used by the
+// example commands, available here as a one-liner.
+func newHandler() *api.Handler {
+	return api.NewHandler(api.NewCatalogService())
+}
+
 // TestDocsValidate asserts the demo document built from the route schemas passes
 // OpenAPI 3 validation — the same check the generator runs before writing files.
 func TestDocsValidate(t *testing.T) {
-	require.NoError(t, api.Registry().Validate(context.Background()))
+	require.NoError(t, newHandler().Registry().Validate(context.Background()))
 }
 
 // TestDocsAreLoadable proves the serialized spec is consumable by any standard
 // OpenAPI tool: it loads the emitted JSON through kin-openapi's loader and
 // re-validates the parsed document.
 func TestDocsAreLoadable(t *testing.T) {
-	raw, err := api.Registry().JSON()
+	raw, err := newHandler().Registry().JSON()
 	require.NoError(t, err)
 
 	doc, err := openapi3.NewLoader().LoadFromData(raw)
@@ -57,7 +63,7 @@ func TestRawAndCustomEnvelopeDocs(t *testing.T) {
 		return mt.Schema.Value.Properties
 	}
 
-	doc := api.Registry().OpenAPI()
+	doc := newHandler().Registry().OpenAPI()
 
 	health := props(t, doc, "/health")
 	assert.NotContains(t, health, "data", "/health should be raw (no data wrapper)")

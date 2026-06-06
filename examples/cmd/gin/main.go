@@ -30,15 +30,16 @@ func main() {
 	// ships none, so this opt-in is how an app turns validation on.
 	oapi.SetValidator(validation.New())
 
+	// Wire dependencies and build the route set.
+	h := api.NewHandler(api.NewCatalogService())
+
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
-	// Mount the demo API.
-	ginadapter.RegisterAll(engine, api.Routes()...)
+	ginadapter.RegisterAll(engine, h.Routes()...)
 
-	// Serve the docs for the same routes: the raw spec plus two browser UIs.
-	reg := api.Registry()
+	reg := h.Registry()
 	engine.GET("/openapi.json", ginadapter.SpecHandler(reg))
 	page := func(html string) gin.HandlerFunc {
 		return func(c *gin.Context) { c.Data(http.StatusOK, docsui.ContentType, []byte(html)) }
