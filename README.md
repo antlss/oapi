@@ -13,13 +13,13 @@ the handler binds, so **they can never drift** from the running code.
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > Status: **pre-1.0**. The API is still settling and may change before a tagged
-> `v1`. See the [CHANGELOG](CHANGELOG.md) for what has moved recently.
+> `v1`.
 
 ## Features
 
 - **Typed handlers** — a handler is `func(ctx, Request[Header, Param, Query, Body]) (*Response, error)`. Each request part is bound from a different source; use `struct{}` for parts you do not consume.
 - **Typed middleware** — `WithTypedBefore` middleware sees the same parsed, typed request as the handler (the request is parsed once and shared).
-- **Three adapters, one route set** — the framework-agnostic core runs unchanged on **net/http**, **gin** and **Fiber v2**. The same `[]Route` mounts on any of them.
+- **Five adapters, one route set** — the framework-agnostic core runs unchanged on **net/http**, **gin**, **Fiber v2**, **chi** and **Echo v4**. The same `[]Route` mounts on any of them.
 - **OpenAPI 3 generation** — a `Registry` turns your routes into a validated OpenAPI 3 document (`JSON`/`YAML`/`Write`), reading the same struct tags used for binding and validation.
 - **Pluggable seams** — the **validator**, the **response envelope**, and the **error parser** are all swappable interfaces. The core ships none of them by default and depends on no validation library.
 - **File upload & download** — multipart bodies (`[]*multipart.FileHeader`) bind like any other field; binary downloads stream via `NewResult(bytes).WithFile(...)`.
@@ -32,22 +32,21 @@ the handler binds, so **they can never drift** from the running code.
 go get github.com/antlss/oapi
 ```
 
-The net/http adapter ships with the core (no extra dependencies). The gin and
-Fiber adapters live in their own modules, so you pull in only what you import:
+The net/http adapter ships with the core (no extra dependencies). The gin,
+Fiber, chi and Echo adapters live in their own modules, so you pull in only what
+you import:
 
 ```sh
 go get github.com/antlss/oapi/adapter/gin
 go get github.com/antlss/oapi/adapter/fiber
+go get github.com/antlss/oapi/adapter/chi
+go get github.com/antlss/oapi/adapter/echo
 ```
 
-The default validator (go-playground/validator-backed, reads the `binding` tag)
-lives in its own lean module
-`github.com/antlss/oapi/validation/playground`, so you can `go get` it without
-pulling in the demo's dependencies:
-
-```sh
-go get github.com/antlss/oapi/validation/playground
-```
+Validation is opt-in via the [`Validator`](#validation-seam) seam — the core
+ships none and depends on no validation library. A go-playground/validator-backed
+reference implementation lives in `examples/validation`; copy it into your project
+or implement the small interface yourself.
 
 ## Quickstart
 
@@ -64,9 +63,6 @@ import (
 
 	"github.com/antlss/oapi"
 	nethttp "github.com/antlss/oapi/adapter/nethttp"
-
-	// The default validator. The core ships none; installing one is opt-in.
-	"github.com/antlss/oapi/validation/playground"
 )
 
 // The request struct is the single source of truth: the `header`/`uri`/`form`/
@@ -106,10 +102,10 @@ var CreateProduct = oapi.NewRoute(
 )
 
 func main() {
-	// Install the default validator so `binding` rules are enforced. The core
-	// ships none, so this opt-in is how an app turns validation on. Without it,
-	// the library logs a one-time warning and skips the rules.
-	oapi.SetValidator(playground.New())
+	// Validation is opt-in: install a Validator so the `binding` rules are
+	// enforced (the core ships none). A go-playground-backed reference lives in
+	// examples/validation — copy it in, then oapi.SetValidator(validation.New()).
+	// Without one, the library logs a one-time warning and skips the rules.
 
 	mux := http.NewServeMux()
 
@@ -130,10 +126,11 @@ func main() {
 }
 ```
 
-`POST /products` now binds and validates `CreateProductBody`, returns
-`201 Created` with `{"data": {...}}`, and `GET /openapi.json` serves an OpenAPI 3
-document whose `CreateProductBody`/`Product` schemas — required fields, the
-`oneof` enum, the bounds — are generated from the exact same struct.
+`POST /products` now binds `CreateProductBody` (and validates it once you install
+a `Validator`), returns `201 Created` with `{"data": {...}}`, and
+`GET /openapi.json` serves an OpenAPI 3 document whose `CreateProductBody`/
+`Product` schemas — required fields, the `oneof` enum, the bounds — are generated
+from the exact same struct.
 
 ## Adapters
 
@@ -146,6 +143,8 @@ same surface: `Register`, `RegisterAll` and `SpecHandler`.
 | net/http    | `github.com/antlss/oapi/adapter/nethttp` | Ships with the core, no extra deps. Go 1.22+ method-aware `ServeMux`. |
 | gin         | `github.com/antlss/oapi/adapter/gin`     | Separate module.                       |
 | Fiber v2    | `github.com/antlss/oapi/adapter/fiber`   | Separate module.                       |
+| chi         | `github.com/antlss/oapi/adapter/chi`     | Separate module (go-chi/chi v5).       |
+| Echo v4     | `github.com/antlss/oapi/adapter/echo`    | Separate module.                       |
 
 Switching frameworks is just a different `RegisterAll` call over the same
 `api.Routes()`.
@@ -233,10 +232,14 @@ constraints (`required`, `oneof` → enum, `min`/`max`/`gt` → bounds, `uuid`/
 ### Validation seam
 
 Validation is a pluggable `Validator` interface installed once at startup with
-`SetValidator`. The core depends on no validation library and ships no validator;
-install the default (`playground.New()`) or your own. `SetValidator(nil)`
-disables validation explicitly. The `RuleTag` variable (default `"binding"`)
-selects which struct tag both the validator and the schema generator read.
+`SetValidator`. The core depends on no validation library and ships no validator.
+`SetValidator(nil)` disables validation explicitly (also silences the startup
+warning). The `RuleTag` variable (default `"binding"`) selects which struct tag
+both the validator and the schema generator read.
+
+A go-playground/validator-backed reference implementation lives in
+`examples/validation`; copy it into your project or wire the small `Validator`
+interface yourself, then `oapi.SetValidator(validation.New())`.
 
 ## Examples
 
@@ -244,7 +247,7 @@ The `examples/` tree is a runnable "Catalog API" exercising every capability —
 typed binding of every request part, JSON/urlencoded/multipart bodies, file
 upload/download, paging, security schemes, typed middleware, the full error
 model, custom envelopes, and a fully populated `Registry`. The same route set is
-mounted on all three adapters by `examples/cmd/{nethttp,gin,fiber}`.
+mounted on net/http, gin, and Fiber by `examples/cmd/{nethttp,gin,fiber}`.
 
 ## License
 

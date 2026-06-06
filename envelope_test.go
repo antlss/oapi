@@ -34,22 +34,25 @@ func newTestCarrier() *testCarrier {
 	return &testCarrier{ctx: context.Background(), headers: map[string]string{}} //nolint:exhaustruct
 }
 
-func (c *testCarrier) Method() string                              { return http.MethodGet }
-func (c *testCarrier) Header(string) string                        { return "" }
-func (c *testCarrier) HeaderValues(string) []string                { return nil }
-func (c *testCarrier) Param(string) string                         { return "" }
-func (c *testCarrier) Query() url.Values                           { return url.Values{} }
-func (c *testCarrier) ContentType() string                         { return "" }
-func (c *testCarrier) Body() ([]byte, error)                       { return nil, nil }
-func (c *testCarrier) MultipartForm() (*multipart.Form, error)     { return nil, nil }
-func (c *testCarrier) SetHeader(k, v string)                       { c.headers[k] = v }
-func (c *testCarrier) WriteJSON(s int, body any) error             { c.status, c.json = s, body; return nil }
-func (c *testCarrier) WriteBytes(s int, ct string, d []byte) error { c.status, c.rawCT, c.raw = s, ct, d; return nil }
-func (c *testCarrier) WriteEmpty(s int) error                      { c.status, c.empty = s, true; return nil }
-func (c *testCarrier) Context() context.Context                    { return c.ctx }
-func (c *testCarrier) SetContext(ctx context.Context)              { c.ctx = ctx }
-func (c *testCarrier) Abort()                                      {}
-func (c *testCarrier) RecordError(err error)                       { c.errs = append(c.errs, err) }
+func (c *testCarrier) Method() string                          { return http.MethodGet }
+func (c *testCarrier) Header(string) string                    { return "" }
+func (c *testCarrier) HeaderValues(string) []string            { return nil }
+func (c *testCarrier) Param(string) string                     { return "" }
+func (c *testCarrier) Query() url.Values                       { return url.Values{} }
+func (c *testCarrier) ContentType() string                     { return "" }
+func (c *testCarrier) Body() ([]byte, error)                   { return nil, nil }
+func (c *testCarrier) MultipartForm() (*multipart.Form, error) { return nil, nil }
+func (c *testCarrier) SetHeader(k, v string)                   { c.headers[k] = v }
+func (c *testCarrier) WriteJSON(s int, body any) error         { c.status, c.json = s, body; return nil }
+func (c *testCarrier) WriteBytes(s int, ct string, d []byte) error {
+	c.status, c.rawCT, c.raw = s, ct, d
+	return nil
+}
+func (c *testCarrier) WriteEmpty(s int) error         { c.status, c.empty = s, true; return nil }
+func (c *testCarrier) Context() context.Context       { return c.ctx }
+func (c *testCarrier) SetContext(ctx context.Context) { c.ctx = ctx }
+func (c *testCarrier) Abort()                         {}
+func (c *testCarrier) RecordError(err error)          { c.errs = append(c.errs, err) }
 
 // writtenJSON marshals whatever the carrier captured (WriteJSON value or raw
 // bytes) so a test can compare against an expected wire string.

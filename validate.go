@@ -21,9 +21,9 @@ import (
 // [NewValidationError].
 //
 // The core depends on no validation library and ships no Validator. Install one
-// once at startup with [SetValidator]; the
-// github.com/antlss/oapi/validation/playground module provides the default,
-// go-playground/validator-backed implementation that reads the `binding` tag.
+// once at startup with [SetValidator]. A ready go-playground/validator-backed
+// implementation that reads the `binding` tag is provided as reference code in
+// the examples module (examples/validation).
 type Validator interface {
 	Validate(value any, source string) error
 }
@@ -83,7 +83,7 @@ func warnIfNoValidator(route Route) {
 	noValidatorWarning.Do(func() {
 		log.Println("[oapi] routes declare `binding` rules but no Validator is configured, " +
 			"so those rules are NOT enforced. Call oapi.SetValidator(...) at startup " +
-			"(github.com/antlss/oapi/validation/playground provides the default), " +
+			"(see the reference validator in examples/validation), " +
 			"or oapi.SetValidator(nil) to silence this warning.")
 	})
 }

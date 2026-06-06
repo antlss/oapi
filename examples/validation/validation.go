@@ -1,11 +1,12 @@
-// Package playground provides a go-playground/validator-backed [oapi.Validator].
+// Package validation provides a go-playground/validator-backed [oapi.Validator]
+// as reference code for the examples.
 //
-// It lives in its own lean module on purpose: the go-playground dependency is a
-// project choice, not part of the library. The core ships only the
+// It is part of the examples module on purpose: the go-playground dependency is
+// a project choice, not part of the library. The core ships only the
 // oapi.Validator seam (and no validation library), so this package doubles as a
 // reference for wiring your own validator. Install it once at startup:
 //
-//	oapi.SetValidator(playground.New())
+//	oapi.SetValidator(validation.New())
 package validation
 
 import (

@@ -25,7 +25,8 @@ jobs:
           - "."
           - "adapter/gin"
           - "adapter/fiber"
-          - "validation/playground"
+          - "adapter/chi"
+          - "adapter/echo"
           - "examples"
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +80,8 @@ jobs:
           - "."
           - "adapter/gin"
           - "adapter/fiber"
-          - "validation/playground"
+          - "adapter/chi"
+          - "adapter/echo"
           - "examples"
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +107,8 @@ jobs:
           - "."
           - "adapter/gin"
           - "adapter/fiber"
-          - "validation/playground"
+          - "adapter/chi"
+          - "adapter/echo"
           - "examples"
     steps:
       - uses: actions/checkout@v4

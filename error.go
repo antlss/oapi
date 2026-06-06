@@ -97,8 +97,8 @@ type ErrorParser interface {
 // during doc generation. Not lock-guarded — install before serving, like the rest
 // of the library's process-wide configuration.
 var (
-	errorParser        ErrorParser  //nolint:gochecknoglobals
-	errorParserWarning sync.Once    //nolint:gochecknoglobals
+	errorParser        ErrorParser //nolint:gochecknoglobals
+	errorParserWarning sync.Once   //nolint:gochecknoglobals
 )
 
 // SetErrorParser installs the process-wide [ErrorParser]. Call it once during

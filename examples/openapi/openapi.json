@@ -376,6 +376,7 @@
             "name": "created_from",
             "schema": {
               "example": "2026-01-01T00:00:00Z",
+              "format": "date-time",
               "type": "string"
             }
           },
@@ -384,6 +385,7 @@
             "name": "created_to",
             "schema": {
               "example": "2026-12-31T23:59:59Z",
+              "format": "date-time",
               "type": "string"
             }
           }
@@ -1810,8 +1812,16 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The product manual as a PDF file"
           },
           "default": {
             "content": {
@@ -1877,6 +1887,7 @@
             "required": true,
             "schema": {
               "example": "2026-01-01T00:00:00Z",
+              "format": "date-time",
               "type": "string"
             }
           },
@@ -1885,6 +1896,7 @@
             "name": "to",
             "schema": {
               "example": "2026-02-01T00:00:00Z",
+              "format": "date-time",
               "type": "string"
             }
           }

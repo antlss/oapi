@@ -31,7 +31,16 @@ updates:
       - go
 
   - package-ecosystem: gomod
-    directory: "/validation/playground"
+    directory: "/adapter/chi"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - go
+
+  - package-ecosystem: gomod
+    directory: "/adapter/echo"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10

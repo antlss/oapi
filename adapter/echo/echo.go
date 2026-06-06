@@ -109,8 +109,8 @@ type carrier struct {
 	body      []byte
 	bodyErr   error
 
-	aborted bool
-	errs    []error
+	// errs collects RecordError calls for logging middleware (see Errors).
+	errs []error
 }
 
 func (a *carrier) Method() string            { return a.c.Request().Method }
@@ -220,7 +220,10 @@ func (a *carrier) SetContext(ctx context.Context) {
 	a.c.SetRequest(a.c.Request().WithContext(ctx))
 }
 
-func (a *carrier) Abort()                { a.aborted = true }
+// Abort is a no-op: Echo has no adapter-side after-middleware to skip (native
+// middleware wraps the whole handler, so it cannot observe an abort from
+// inside). The core calls it when rendering an error; gin uses it for real.
+func (a *carrier) Abort()                {}
 func (a *carrier) RecordError(err error) { a.errs = append(a.errs, err) }
 
 // Errors exposes recorded errors for Echo logging middleware.

@@ -7,6 +7,8 @@ name: Release
 # own path-prefixed tags, pushed separately, e.g.:
 #   adapter/gin/vX.Y.Z
 #   adapter/fiber/vX.Y.Z
+#   adapter/chi/vX.Y.Z
+#   adapter/echo/vX.Y.Z
 #   examples/vX.Y.Z
 # This workflow intentionally only gates the core `vX.Y.Z` tag. Publishing
 # (GoReleaser, changelog, GitHub Release, etc.) can be wired in later.
@@ -30,6 +32,8 @@ jobs:
           - "."
           - "adapter/gin"
           - "adapter/fiber"
+          - "adapter/chi"
+          - "adapter/echo"
           - "examples"
     steps:
       - uses: actions/checkout@v4
@@ -49,8 +53,8 @@ jobs:
         run: go test -race ./...
 
   # Placeholder for the actual publish step (GoReleaser / GitHub Release).
-  # Submodule tags (adapter/gin/vX.Y.Z, adapter/fiber/vX.Y.Z, examples/vX.Y.Z)
-  # are pushed separately and handled by their own tag pushes.
+  # Submodule tags (adapter/{gin,fiber,chi,echo}/vX.Y.Z, examples/vX.Y.Z) are
+  # pushed separately and handled by their own tag pushes.
   release:
     name: release
     needs: test
