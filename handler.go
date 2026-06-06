@@ -21,8 +21,9 @@ type RichHandler[Header, Param, Query, Body any] func(
 ) (*Result, error)
 
 // NewRoute builds an endpoint from a typed RequestHandler. The request is parsed
-// exactly once (shared with any typed middleware), the response is wrapped in
-// the standard {"data": ...} envelope and errors are rendered via Result.
+// exactly once (shared with any typed middleware), the response is wrapped by the
+// route's configured envelope (the default [DataEnvelope] gives {"data": ...}) and
+// errors are rendered via Result.
 func NewRoute[Header, Param, Query, Body, Response any](
 	method string,
 	path string,
@@ -33,6 +34,7 @@ func NewRoute[Header, Param, Query, Body, Response any](
 
 	successStatus := route.successStatus
 	mapper := route.errorMapper
+	env := route.envelope
 	route.invoke = func(ex *execution) {
 		req, err := cachedRequest[Header, Param, Query, Body](ex)
 		if err != nil {
@@ -46,7 +48,7 @@ func NewRoute[Header, Param, Query, Body, Response any](
 			return
 		}
 
-		writeSuccess(ex, res, successStatus, mapper)
+		writeSuccess(ex, res, successStatus, mapper, env)
 	}
 
 	return route
@@ -64,6 +66,7 @@ func NewRichRoute[Header, Param, Query, Body any](
 	route := newBaseRoute[Header, Param, Query, Body, struct{}](method, path, opts)
 
 	mapper := route.errorMapper
+	env := route.envelope
 	route.invoke = func(ex *execution) {
 		req, err := cachedRequest[Header, Param, Query, Body](ex)
 		if err != nil {
@@ -82,7 +85,13 @@ func NewRichRoute[Header, Param, Query, Body any](
 			return
 		}
 
-		_ = res.withErrorMapper(mapper).render(ex)
+		res.withErrorMapper(mapper)
+		// Inject the route's envelope only when the handler's constructor did not
+		// pin one (NewResult pins RawEnvelope; NewDataResult leaves it to inherit).
+		if res.envelope == nil {
+			res.withEnvelope(resolveEnvelope(env))
+		}
+		_ = res.render(ex)
 	}
 
 	return route

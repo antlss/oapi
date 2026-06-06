@@ -55,16 +55,18 @@ var (
 	errProductGone     = errors.New("product permanently deleted")
 )
 
-// productErrorMapper maps the sentinel errors above to HTTP responses. Returning
-// ok=false defers to the default handling (HTTPError → aerror-shaped → 500).
-func productErrorMapper(err error) (int, json.RawMessage, bool) {
+// productErrorMapper maps the sentinel errors above to HTTP responses. A claiming
+// mapper now owns the FULL wire body, so it returns the complete {"error":{...}}
+// envelope itself (the library no longer wraps it). Returning ok=false defers to
+// the global ErrorParser, then the default handling (HTTPError → aerror → 500).
+func productErrorMapper(err error) (int, any, bool) {
 	switch {
 	case errors.Is(err, errProductConflict):
 		return http.StatusConflict,
-			json.RawMessage(`{"code":"version_conflict","message":"the product was modified by someone else"}`), true
+			json.RawMessage(`{"error":{"code":"version_conflict","message":"the product was modified by someone else"}}`), true
 	case errors.Is(err, errProductGone):
 		return http.StatusGone,
-			json.RawMessage(`{"code":"gone","message":"the product was permanently deleted"}`), true
+			json.RawMessage(`{"error":{"code":"gone","message":"the product was permanently deleted"}}`), true
 	}
 	return 0, nil, false
 }

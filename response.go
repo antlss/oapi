@@ -8,9 +8,12 @@ import (
 	"net/url"
 )
 
-// Result is the library's HTTP response envelope. It keeps a consistent JSON
-// shape ({"data" | "error" | "meta": ...}) across the whole API. The zero value
-// is not usable; build one with NewResult.
+// Result is the library's HTTP response value. Its success body is shaped by the
+// route's [ResponseEnvelope] (the default [DataEnvelope] gives the {"data": ...} /
+// {"meta": ...} shape; configure it with [SetResponseEnvelope]/[WithEnvelope] or
+// drop it with [WithRawResponse]); errors render through the resolution chain. The
+// zero value is not usable — build one with [NewResult] (raw model) or
+// [NewDataResult] (enveloped).
 type Result struct {
 	Status int              `json:"-"`
 	Data   any              `json:"data,omitempty"`
@@ -24,12 +27,31 @@ type Result struct {
 
 	headers     [][2]string
 	errorMapper ErrorMapper
+	envelope    ResponseEnvelope
 }
 
-// NewResult creates a 200 OK result carrying data. Use the With* builders to
-// adjust status, attach meta/paging, turn it into an error or a file download.
+// NewResult creates a 200 OK result carrying data rendered AS-IS — the raw handler
+// model, with no envelope. Use [NewDataResult] for the standard {"data": ...}
+// wrapping (or whatever envelope the route/process configures). Use the With*
+// builders to adjust status, turn it into an error or a file download.
+//
+// A raw result pins itself to [RawEnvelope], so it stays raw even on a route whose
+// configured envelope wraps — the explicit constructor choice wins.
 func NewResult(data any) *Result {
+	return &Result{Status: http.StatusOK, Data: data, envelope: RawEnvelope} //nolint:exhaustruct
+}
+
+// NewDataResult creates a 200 OK result whose payload is wrapped by the route's
+// configured [ResponseEnvelope] (the default [DataEnvelope] gives {"data": ...}).
+// Leaving the envelope unset lets the route or process-wide setting decide.
+func NewDataResult(data any) *Result {
 	return &Result{Status: http.StatusOK, Data: data} //nolint:exhaustruct
+}
+
+// NewListDataResult is a convenience for a paged collection: the items wrapped by
+// the configured envelope, with standard pagination meta attached (see WithPaging).
+func NewListDataResult(items any, count int64, perPage, current int) *Result {
+	return NewDataResult(items).WithPaging(count, perPage, current)
 }
 
 // WithStatus overrides the HTTP status code. On an error result it takes
@@ -108,6 +130,16 @@ func (r *Result) withErrorMapper(m ErrorMapper) *Result {
 	return r
 }
 
+// withEnvelope wires the route's success envelope so render can wrap the payload.
+func (r *Result) withEnvelope(e ResponseEnvelope) *Result {
+	r.envelope = e
+	return r
+}
+
+// jsonContentType is the media type written for JSON bodies that go out through
+// WriteBytes (a custom error body), matching the adapters' WriteJSON header.
+const jsonContentType = "application/json; charset=utf-8"
+
 // render writes the result through the carrier.
 func (r *Result) render(c Carrier) error {
 	// Custom headers must precede any Write* call (Carrier contract).
@@ -136,19 +168,32 @@ func (r *Result) render(c Carrier) error {
 		// honoured even when a RichHandler built this Result via WithError before
 		// the mapper was attached (handler.go wires it only after the handler
 		// returns). An explicit WithStatus still wins.
-		status, body := resolveError(r.bizErr, r.errorMapper)
+		status, body, wrap := resolveError(r.bizErr, r.errorMapper)
 		if !r.statusOverride {
 			r.Status = status
 		}
-		r.Error = &body
 		// Surface to logging middleware (e.g. gin's c.Errors); does not write.
 		c.RecordError(r.bizErr)
+
+		if r.Status == http.StatusNoContent {
+			return c.WriteEmpty(http.StatusNoContent)
+		}
+		if !wrap {
+			// A custom ErrorMapper / ErrorParser owns the full wire body, so write
+			// it verbatim with no {"error": ...} wrapper.
+			return c.WriteBytes(r.Status, jsonContentType, body)
+		}
+		// Built-in resolution keeps the standard {"error": ...} envelope, produced
+		// by marshalling the Result struct (data is nil here, so only "error"
+		// — and any attached meta — appears).
+		r.Error = &body
+		return c.WriteJSON(r.Status, r)
 	}
 
 	if r.Status == http.StatusNoContent {
 		return c.WriteEmpty(http.StatusNoContent)
 	}
-	return c.WriteJSON(r.Status, r)
+	return c.WriteJSON(r.Status, resolveEnvelope(r.envelope).Wrap(r.Data, r.Meta))
 }
 
 // contentDisposition builds a safe attachment Content-Disposition value. The

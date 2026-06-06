@@ -308,6 +308,7 @@ func formRequestBody(t reflect.Type) *openapi3.RequestBody {
 
 func responsesFor(route Route) *openapi3.Responses {
 	doc := route.doc
+	env := resolveEnvelope(route.envelope)
 	successStatus := route.successStatus
 	if successStatus == 0 {
 		if doc.schema.Response == nil {
@@ -321,7 +322,8 @@ func responsesFor(route Route) *openapi3.Responses {
 
 	successResp := openapi3.NewResponse().WithDescription(http.StatusText(successStatus))
 	if doc.schema.Response != nil && successStatus != http.StatusNoContent {
-		successResp = successResp.WithJSONSchemaRef(envelopeSchemaRef(doc.schema.Response, doc.schema.Meta))
+		successResp = successResp.WithJSONSchemaRef(
+			env.WrapSchema(typeSchemaRef(doc.schema.Response), metaSchemaRef(doc.schema.Meta)))
 	}
 	opts = append(opts, openapi3.WithStatus(successStatus, &openapi3.ResponseRef{Value: successResp})) //nolint:exhaustruct
 
@@ -336,10 +338,17 @@ func responsesFor(route Route) *openapi3.Responses {
 		}
 		resp := openapi3.NewResponse().WithDescription(desc)
 		switch {
-		case rd.typ != nil:
-			resp = resp.WithJSONSchemaRef(envelopeSchemaRef(rd.typ, nil))
 		case rd.status >= http.StatusBadRequest:
-			resp = resp.WithJSONSchemaRef(errorEnvelopeSchemaRef())
+			// Error statuses are never wrapped in the success envelope: a declared
+			// body type is the full error body, otherwise use the configured error
+			// schema.
+			if rd.typ != nil {
+				resp = resp.WithJSONSchemaRef(typeSchemaRef(rd.typ))
+			} else {
+				resp = resp.WithJSONSchemaRef(errorSchemaRef())
+			}
+		case rd.typ != nil:
+			resp = resp.WithJSONSchemaRef(env.WrapSchema(typeSchemaRef(rd.typ), nil))
 		}
 		opts = append(opts, openapi3.WithStatus(rd.status, &openapi3.ResponseRef{Value: resp})) //nolint:exhaustruct
 	}
@@ -350,17 +359,27 @@ func responsesFor(route Route) *openapi3.Responses {
 	return openapi3.NewResponses(opts...)
 }
 
-// envelopeSchemaRef wraps the response type in the standard {"data": ...} shape
-// produced by Result. When metaType is non-nil (declared via WithMetaType, e.g.
-// PagingMeta) a "meta" property is documented too, so paged/meta-bearing success
-// responses are complete.
-func envelopeSchemaRef(dataType, metaType reflect.Type) *openapi3.SchemaRef {
-	envelope := openapi3.NewObjectSchema()
-	envelope.Properties = openapi3.Schemas{"data": typeSchemaRef(dataType)}
-	if metaType != nil {
-		envelope.Properties["meta"] = typeSchemaRef(metaType)
+// metaSchemaRef builds the schema for an envelope's meta type, or nil when no meta
+// type is declared (so the envelope omits the meta key), mirroring how Result only
+// emits meta when it is attached.
+func metaSchemaRef(t reflect.Type) *openapi3.SchemaRef {
+	if t == nil {
+		return nil
 	}
-	return openapi3.NewSchemaRef("", envelope)
+	return typeSchemaRef(t)
+}
+
+// errorSchemaRef is the schema for documented error responses: the configured
+// [ErrorParser]'s body type when it describes one, else the built-in
+// {"error": ...} schema. Both the per-status error responses and the default
+// catch-all use it, so they can never describe different shapes.
+func errorSchemaRef() *openapi3.SchemaRef {
+	if errorParser != nil {
+		if t := errorParser.ErrorType(); t != nil {
+			return typeSchemaRef(t)
+		}
+	}
+	return errorEnvelopeSchemaRef()
 }
 
 // typeSchemaRef builds an example-enriched schema for a single Go type, overlaying
@@ -413,11 +432,12 @@ func errorEnvelopeSchemaRef() *openapi3.SchemaRef {
 	return openapi3.NewSchemaRef("", envelope)
 }
 
-// errorResponse is the generic "default" error response.
+// errorResponse is the generic "default" error response, using the same error
+// schema as the per-status error responses (see errorSchemaRef).
 func errorResponse() *openapi3.Response {
 	return openapi3.NewResponse().
 		WithDescription("Error").
-		WithJSONSchemaRef(errorEnvelopeSchemaRef())
+		WithJSONSchemaRef(errorSchemaRef())
 }
 
 func scalarSchema(t reflect.Type) *openapi3.Schema {

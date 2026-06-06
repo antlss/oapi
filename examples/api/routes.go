@@ -40,7 +40,7 @@ var ListProducts = oapi.NewRichRoute(
 			perPage = 20
 		}
 		items := sampleProducts()
-		return oapi.NewResult(items).WithPaging(int64(len(items)), perPage, page), nil
+		return oapi.NewListDataResult(items, int64(len(items)), perPage, page), nil
 	},
 	oapi.WithSummary("List products"),
 	oapi.WithDescription("Search and page the catalog. Shows embedded query structs, enum/bound parameters and pagination meta."),
@@ -60,7 +60,7 @@ var GetProduct = oapi.NewRichRoute(
 		}
 		p := sampleProduct(req.Param.ID)
 		etag := fmt.Sprintf(`"v-%d"`, p.ID)
-		return oapi.NewResult(p).
+		return oapi.NewDataResult(p).
 			WithHeader("ETag", etag).
 			WithHeader("Cache-Control", "private, max-age=60").
 			WithMeta(map[string]any{"etag": etag}), nil
@@ -86,7 +86,7 @@ var CreateProduct = oapi.NewRichRoute(
 			Currency: req.Body.Currency, Category: req.Body.Category, Tags: req.Body.Tags,
 			Warehouse: req.Body.Warehouse, InStock: true, CreatedAt: sampleTime(),
 		}
-		return oapi.NewResult(p).
+		return oapi.NewDataResult(p).
 			WithStatus(http.StatusCreated).
 			WithHeader("Location", fmt.Sprintf("/products/%d", p.ID)), nil
 	},

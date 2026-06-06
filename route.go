@@ -20,6 +20,9 @@ type Route struct {
 	invoke        func(*execution)
 	successStatus int
 	errorMapper   ErrorMapper
+	// envelope shapes the success body (and its documented schema). nil means
+	// "inherit the process-wide default" (see resolveEnvelope).
+	envelope ResponseEnvelope
 
 	// hasRules is precomputed at construction: true when any bound request part
 	// carries a validation rule tag. The request path reads only this bool (never
@@ -145,9 +148,23 @@ func WithSecurity(scheme string, scopes ...string) RouteOption {
 }
 
 // WithErrorMapper sets a custom error mapper for this route, taking precedence
-// over the default HTTPError / aerror-compatible resolution.
+// over the global ErrorParser and the default HTTPError / aerror resolution.
 func WithErrorMapper(mapper ErrorMapper) RouteOption {
 	return func(route *Route) { route.errorMapper = mapper }
+}
+
+// WithEnvelope overrides the success-response envelope for this route, taking
+// precedence over the process-wide [SetResponseEnvelope] default. It drives both
+// the wire body and the documented schema, so they stay in lockstep.
+func WithEnvelope(e ResponseEnvelope) RouteOption {
+	return func(route *Route) { route.envelope = e }
+}
+
+// WithRawResponse renders this route's success body as the raw handler model with
+// no envelope (and documents it the same way). Shorthand for
+// WithEnvelope(RawEnvelope).
+func WithRawResponse() RouteOption {
+	return func(route *Route) { route.envelope = RawEnvelope }
 }
 
 func newBaseRoute[Header, Param, Query, Body, Response any](
@@ -232,7 +249,7 @@ func (route Route) SuccessStatus() int { return route.successStatus }
 
 // --- shared render helpers (used by handler closures) -----------------------
 
-func writeSuccess[Response any](c Carrier, res *Response, successStatus int, mapper ErrorMapper) {
+func writeSuccess[Response any](c Carrier, res *Response, successStatus int, mapper ErrorMapper, env ResponseEnvelope) {
 	// No response body type declared, an explicit 204, or a nil pointer was
 	// returned: write no body, but honour a custom success status (e.g. a 201
 	// Created with an empty body) so the status on the wire matches what
@@ -251,7 +268,13 @@ func writeSuccess[Response any](c Carrier, res *Response, successStatus int, map
 		status = http.StatusOK
 	}
 
-	_ = NewResult(res).WithStatus(status).withErrorMapper(mapper).render(c)
+	// Typed routes wrap their payload with the route's configured envelope (the
+	// default DataEnvelope yields {"data": ...}); NewDataResult inherits it.
+	_ = NewDataResult(res).
+		WithStatus(status).
+		withErrorMapper(mapper).
+		withEnvelope(resolveEnvelope(env)).
+		render(c)
 }
 
 // renderError renders a business error. Status resolution honours an optional
