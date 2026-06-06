@@ -1,0 +1,23 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Catalog API",
+    "version": "v1",
+    "description": "Sample **base document**. Everything here can be authored by non-developers and overlaid at generation time with `cmd/openapi-gen -base ./openapi/common.json`. The generated paths and any value set in Go via the Registry builders take precedence over these defaults.",
+    "termsOfService": "https://example.com/terms",
+    "contact": { "name": "Catalog API Team", "email": "api@example.com" },
+    "license": { "name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0" },
+    "x-logo": { "url": "https://redocly.github.io/redoc/petstore-logo.png", "altText": "Catalog API" }
+  },
+  "externalDocs": { "description": "Full developer guides", "url": "https://docs.example.com" },
+  "tags": [
+    { "name": "catalog", "description": "Browse, create and manage products" },
+    { "name": "account", "description": "Subscriptions and account actions" },
+    { "name": "reports", "description": "Reporting endpoints (some deprecated)" },
+    { "name": "assets", "description": "Binary asset retrieval" }
+  ],
+  "x-tagGroups": [
+    { "name": "Commerce", "tags": ["catalog", "account"] },
+    { "name": "Operations", "tags": ["reports", "assets"] }
+  ]
+}

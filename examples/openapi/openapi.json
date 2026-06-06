@@ -1,0 +1,1973 @@
+{
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "externalDocs": {
+    "description": "Full developer guides",
+    "url": "https://docs.example.com"
+  },
+  "info": {
+    "contact": {
+      "email": "api@example.com",
+      "name": "Catalog API Team",
+      "url": "https://example.com/support"
+    },
+    "description": "A demo API exercising every capability of the oapi library: typed binding, validation-driven docs, files, paging, security, typed middleware and the full error model.",
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "termsOfService": "https://example.com/terms",
+    "title": "Catalog API",
+    "version": "v1",
+    "x-logo": {
+      "url": "https://redocly.github.io/redoc/petstore-logo.png"
+    }
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/assets/{path}": {
+      "get": {
+        "operationId": "get_assets_path",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": true,
+            "schema": {
+              "example": "sk_live_8f3a1c",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "example": "images/logo.png",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "path": {
+                          "example": "images/logo.png",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Fetch an asset by path",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/products": {
+      "get": {
+        "description": "Search and page the catalog. Shows embedded query structs, enum/bound parameters and pagination meta.",
+        "operationId": "get_products",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "example": 1,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "example": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "enum": [
+                "name",
+                "-name",
+                "price",
+                "-price",
+                "created_at"
+              ],
+              "example": "-price",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "example": "keyboard",
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "schema": {
+              "enum": [
+                "book",
+                "electronics",
+                "food",
+                "toy"
+              ],
+              "example": "electronics",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "in_stock",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "schema": {
+              "example": "2026-01-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "schema": {
+              "example": "2026-12-31T23:59:59Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "properties": {
+                          "category": {
+                            "example": "electronics",
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "example": "2026-01-02T15:04:05Z",
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "currency": {
+                            "example": "USD",
+                            "type": "string"
+                          },
+                          "id": {
+                            "example": 1001,
+                            "type": "integer"
+                          },
+                          "in_stock": {
+                            "example": true,
+                            "type": "boolean"
+                          },
+                          "name": {
+                            "example": "Mechanical Keyboard",
+                            "type": "string"
+                          },
+                          "price": {
+                            "example": 49.9,
+                            "format": "double",
+                            "type": "number"
+                          },
+                          "sku": {
+                            "example": "5f9c2e3a-1b4d-4c8e-9f0a-2b3c4d5e6f70",
+                            "type": "string"
+                          },
+                          "tags": {
+                            "example": [
+                              "new",
+                              "featured"
+                            ],
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "warehouse": {
+                            "properties": {
+                              "city": {
+                                "example": "Tokyo",
+                                "type": "string"
+                              },
+                              "country": {
+                                "example": "JP",
+                                "type": "string"
+                              },
+                              "line1": {
+                                "example": "1-2-3 Shibuya",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "properties": {
+                        "count": {
+                          "example": 137,
+                          "format": "int64",
+                          "type": "integer"
+                        },
+                        "current": {
+                          "example": 1,
+                          "type": "integer"
+                        },
+                        "pages": {
+                          "example": 7,
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "example": 20,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List products",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "post": {
+        "operationId": "post_products",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "category": {
+                    "enum": [
+                      "book",
+                      "electronics",
+                      "food",
+                      "toy"
+                    ],
+                    "example": "electronics",
+                    "type": "string"
+                  },
+                  "contact": {
+                    "example": "sales@example.com",
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "currency": {
+                    "enum": [
+                      "USD",
+                      "EUR",
+                      "JPY",
+                      "VND"
+                    ],
+                    "example": "USD",
+                    "type": "string"
+                  },
+                  "name": {
+                    "example": "Mechanical Keyboard",
+                    "maxLength": 120,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "price": {
+                    "example": 49.9,
+                    "exclusiveMinimum": true,
+                    "format": "double",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "sku": {
+                    "example": "5f9c2e3a-1b4d-4c8e-9f0a-2b3c4d5e6f70",
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "tags": {
+                    "example": [
+                      "new",
+                      "featured"
+                    ],
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 10,
+                    "type": "array"
+                  },
+                  "warehouse": {
+                    "properties": {
+                      "city": {
+                        "example": "Tokyo",
+                        "type": "string"
+                      },
+                      "country": {
+                        "example": "JP",
+                        "maxLength": 2,
+                        "minLength": 2,
+                        "type": "string"
+                      },
+                      "line1": {
+                        "example": "1-2-3 Shibuya",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "line1",
+                      "city",
+                      "country"
+                    ],
+                    "type": "object"
+                  },
+                  "website": {
+                    "example": "https://example.com",
+                    "format": "uri",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "sku",
+                  "price",
+                  "currency",
+                  "category"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "category": {
+                          "example": "electronics",
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "example": "2026-01-02T15:04:05Z",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "currency": {
+                          "example": "USD",
+                          "type": "string"
+                        },
+                        "id": {
+                          "example": 1001,
+                          "type": "integer"
+                        },
+                        "in_stock": {
+                          "example": true,
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "example": "Mechanical Keyboard",
+                          "type": "string"
+                        },
+                        "price": {
+                          "example": 49.9,
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "sku": {
+                          "example": "5f9c2e3a-1b4d-4c8e-9f0a-2b3c4d5e6f70",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "example": [
+                            "new",
+                            "featured"
+                          ],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "warehouse": {
+                          "properties": {
+                            "city": {
+                              "example": "Tokyo",
+                              "type": "string"
+                            },
+                            "country": {
+                              "example": "JP",
+                              "type": "string"
+                            },
+                            "line1": {
+                              "example": "1-2-3 Shibuya",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Duplicate SKU"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "products:write"
+            ]
+          }
+        ],
+        "summary": "Create a product",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/products/{id}": {
+      "delete": {
+        "operationId": "delete_products_id",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": true,
+            "schema": {
+              "example": "Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "example": 1001,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or invalid token"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "products:write"
+            ]
+          }
+        ],
+        "summary": "Delete a product",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "get": {
+        "operationId": "get_products_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "example": 1001,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "category": {
+                          "example": "electronics",
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "example": "2026-01-02T15:04:05Z",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "currency": {
+                          "example": "USD",
+                          "type": "string"
+                        },
+                        "id": {
+                          "example": 1001,
+                          "type": "integer"
+                        },
+                        "in_stock": {
+                          "example": true,
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "example": "Mechanical Keyboard",
+                          "type": "string"
+                        },
+                        "price": {
+                          "example": 49.9,
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "sku": {
+                          "example": "5f9c2e3a-1b4d-4c8e-9f0a-2b3c4d5e6f70",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "example": [
+                            "new",
+                            "featured"
+                          ],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "warehouse": {
+                          "properties": {
+                            "city": {
+                              "example": "Tokyo",
+                              "type": "string"
+                            },
+                            "country": {
+                              "example": "JP",
+                              "type": "string"
+                            },
+                            "line1": {
+                              "example": "1-2-3 Shibuya",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Product not found"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a product",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_products_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "example": 1001,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "in_stock": {
+                    "example": true,
+                    "nullable": true,
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "example": "Renamed Keyboard",
+                    "maxLength": 120,
+                    "minLength": 2,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "price": {
+                    "example": 39.9,
+                    "exclusiveMinimum": true,
+                    "format": "double",
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "category": {
+                          "example": "electronics",
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "example": "2026-01-02T15:04:05Z",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "currency": {
+                          "example": "USD",
+                          "type": "string"
+                        },
+                        "id": {
+                          "example": 1001,
+                          "type": "integer"
+                        },
+                        "in_stock": {
+                          "example": true,
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "example": "Mechanical Keyboard",
+                          "type": "string"
+                        },
+                        "price": {
+                          "example": 49.9,
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "sku": {
+                          "example": "5f9c2e3a-1b4d-4c8e-9f0a-2b3c4d5e6f70",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "example": [
+                            "new",
+                            "featured"
+                          ],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "warehouse": {
+                          "properties": {
+                            "city": {
+                              "example": "Tokyo",
+                              "type": "string"
+                            },
+                            "country": {
+                              "example": "JP",
+                              "type": "string"
+                            },
+                            "line1": {
+                              "example": "1-2-3 Shibuya",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Partially update a product",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "put": {
+        "operationId": "put_products_id",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": true,
+            "schema": {
+              "example": "Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "example": 1001,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "currency": {
+                    "enum": [
+                      "USD",
+                      "EUR",
+                      "JPY",
+                      "VND"
+                    ],
+                    "example": "USD",
+                    "type": "string"
+                  },
+                  "in_stock": {
+                    "example": false,
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "example": "Mechanical Keyboard v2",
+                    "maxLength": 120,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "price": {
+                    "example": 54.9,
+                    "exclusiveMinimum": true,
+                    "format": "double",
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "price",
+                  "currency"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "category": {
+                          "example": "electronics",
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "example": "2026-01-02T15:04:05Z",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "currency": {
+                          "example": "USD",
+                          "type": "string"
+                        },
+                        "id": {
+                          "example": 1001,
+                          "type": "integer"
+                        },
+                        "in_stock": {
+                          "example": true,
+                          "type": "boolean"
+                        },
+                        "name": {
+                          "example": "Mechanical Keyboard",
+                          "type": "string"
+                        },
+                        "price": {
+                          "example": 49.9,
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "sku": {
+                          "example": "5f9c2e3a-1b4d-4c8e-9f0a-2b3c4d5e6f70",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "example": [
+                            "new",
+                            "featured"
+                          ],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "warehouse": {
+                          "properties": {
+                            "city": {
+                              "example": "Tokyo",
+                              "type": "string"
+                            },
+                            "country": {
+                              "example": "JP",
+                              "type": "string"
+                            },
+                            "line1": {
+                              "example": "1-2-3 Shibuya",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or invalid token"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Version conflict"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": [
+              "products:write"
+            ]
+          }
+        ],
+        "summary": "Replace a product",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/products/{id}/images": {
+      "post": {
+        "operationId": "post_products_id_images",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "example": 1001,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "caption": {
+                    "example": "front and back",
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "files": {
+                    "items": {
+                      "format": "binary",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "files"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "caption": {
+                          "example": "front and back",
+                          "type": "string"
+                        },
+                        "files": {
+                          "example": [
+                            "front.png",
+                            "back.png"
+                          ],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "product_id": {
+                          "example": 1001,
+                          "type": "integer"
+                        },
+                        "total_bytes": {
+                          "example": 204800,
+                          "format": "int64",
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Upload product images",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/products/{id}/manual": {
+      "get": {
+        "operationId": "get_products_id_manual",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "example": 1001,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Download the product manual (binary)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/reports/sales": {
+      "get": {
+        "deprecated": true,
+        "description": "Superseded by the analytics service; kept for backward compatibility.",
+        "operationId": "get_reports_sales",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "example": "2026-01-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "example": "2026-02-01T00:00:00Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "from": {
+                          "example": "2026-01-01T00:00:00Z",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "to": {
+                          "example": "2026-02-01T00:00:00Z",
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "total": {
+                          "example": 42,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Sales report",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/subscribe": {
+      "post": {
+        "operationId": "post_subscribe",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "email": {
+                    "example": "user@example.com",
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "plan": {
+                    "enum": [
+                      "free",
+                      "pro",
+                      "enterprise"
+                    ],
+                    "example": "pro",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "plan"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "email": {
+                          "example": "user@example.com",
+                          "type": "string"
+                        },
+                        "plan": {
+                          "example": "pro",
+                          "type": "string"
+                        },
+                        "status": {
+                          "example": "subscribed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Subscribe to a plan (urlencoded form)",
+        "tags": [
+          "account"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Local example server",
+      "url": "http://localhost:8080"
+    },
+    {
+      "description": "Production",
+      "url": "https://api.example.com"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Browse, create and manage products",
+      "name": "catalog"
+    },
+    {
+      "description": "Subscriptions and account actions",
+      "name": "account"
+    },
+    {
+      "description": "Reporting endpoints (some deprecated)",
+      "name": "reports"
+    },
+    {
+      "description": "Binary asset retrieval",
+      "name": "assets"
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Commerce",
+      "tags": [
+        "catalog",
+        "account"
+      ]
+    },
+    {
+      "name": "Operations",
+      "tags": [
+        "reports",
+        "assets"
+      ]
+    }
+  ]
+}
