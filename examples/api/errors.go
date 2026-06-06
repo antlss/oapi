@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
+
+	"github.com/antlss/oapi"
 )
 
 // The demo wires up every error mechanism the library understands, each to a
@@ -12,8 +15,10 @@ import (
 //
 //  1. demoError      — implements oapi.HTTPError + oapi.ErrorBody (custom body)
 //  2. apiError       — "aerror-shaped" duck typing (HTTPStatusCode + ToJSON)
-//  3. sentinel + ErrorMapper — plain domain errors mapped to HTTP responses
+//  3. sentinel + ErrorMapper — plain domain errors mapped to HTTP responses (per route)
 //  4. validation     — produced automatically by the validator (see types.go)
+//  5. AppErrorParser — a process-wide oapi.ErrorParser giving the WHOLE API one
+//     custom error shape (see cmd/customized); composes under the per-route mapper.
 
 // 1) demoError controls BOTH its status and the exact JSON under the "error" key.
 type demoError struct {
@@ -70,3 +75,50 @@ func productErrorMapper(err error) (int, any, bool) {
 	}
 	return 0, nil, false
 }
+
+// 5) AppError is this project's uniform error envelope — a DIFFERENT shape from
+// the library's built-in {"error":{code,message,fields}}. Installing AppErrorParser
+// process-wide (see cmd/customized) makes every error render in this shape, and its
+// ErrorType keeps the generated docs in sync.
+type AppError struct {
+	Success bool           `json:"success" example:"false"`
+	Error   AppErrorDetail `json:"error"`
+}
+
+// AppErrorDetail is the inner error object of [AppError].
+type AppErrorDetail struct {
+	Code    string            `json:"code"             example:"bad_request"`
+	Message string            `json:"message"          example:"request validation failed"`
+	Fields  []oapi.FieldError `json:"fields,omitempty"`
+}
+
+// AppErrorParser renders EVERY error as an [AppError], so the whole API speaks one
+// error shape. It recognises the library's own oapi.Error (forwarding field-level
+// validation details), the demo's aerror-shaped apiError, and any oapi.HTTPError;
+// anything unrecognised becomes a non-leaking 500. ErrorType() lets the OpenAPI
+// generator document the shape it produces.
+type AppErrorParser struct{}
+
+// compile-time assurance the parser satisfies the core seam.
+var _ oapi.ErrorParser = AppErrorParser{}
+
+func (AppErrorParser) Resolve(err error) (int, any, bool) {
+	var oe *oapi.Error
+	if errors.As(err, &oe) {
+		return oe.Status, AppError{Error: AppErrorDetail{Code: oe.Code, Message: oe.Message, Fields: oe.Fields}}, true
+	}
+	var ae apiError
+	if errors.As(err, &ae) {
+		var d AppErrorDetail
+		_ = json.Unmarshal(ae.payload, &d)
+		return ae.status, AppError{Error: d}, true
+	}
+	var he oapi.HTTPError
+	if errors.As(err, &he) {
+		return he.HTTPStatus(), AppError{Error: AppErrorDetail{Code: "error", Message: he.Error()}}, true
+	}
+	return http.StatusInternalServerError,
+		AppError{Error: AppErrorDetail{Code: "internal_error", Message: "internal server error"}}, true
+}
+
+func (AppErrorParser) ErrorType() reflect.Type { return reflect.TypeFor[AppError]() }

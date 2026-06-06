@@ -164,3 +164,19 @@ type ReportResult struct {
 type AssetResult struct {
 	Path string `json:"path" example:"images/logo.png"`
 }
+
+// HealthStatus is returned RAW (no envelope) by the /health endpoint, which opts
+// out of the standard {"data": ...} wrapping with WithRawResponse. The response
+// body is this object itself.
+type HealthStatus struct {
+	Status  string `json:"status"  example:"ok"`
+	Version string `json:"version" example:"v1"`
+}
+
+// CatalogSummary is returned by /catalog/summary, which wraps it in a project
+// specific {"result": ..., "success": true} envelope via WithEnvelope so both the
+// body and the generated schema follow that shape instead of the default {"data"}.
+type CatalogSummary struct {
+	Products   int `json:"products"   example:"128"`
+	Categories int `json:"categories" example:"7"`
+}

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -36,7 +37,34 @@ func TestDocsAreLoadable(t *testing.T) {
 		"/subscribe",
 		"/reports/sales",
 		"/assets/{path}",
+		"/health",
+		"/catalog/summary",
 	} {
 		assert.NotNil(t, doc.Paths.Value(path), "missing path %s", path)
 	}
+}
+
+// TestRawAndCustomEnvelopeDocs asserts the per-route envelope overrides are
+// reflected in the generated schema: /health is raw (its model, no data wrapper)
+// and /catalog/summary uses the custom {result, success} envelope.
+func TestRawAndCustomEnvelopeDocs(t *testing.T) {
+	props := func(t *testing.T, doc *openapi3.T, path string) openapi3.Schemas {
+		t.Helper()
+		op := doc.Paths.Value(path).Get
+		require.NotNil(t, op, "missing GET %s", path)
+		mt := op.Responses.Status(http.StatusOK).Value.Content.Get("application/json")
+		require.NotNil(t, mt, "missing 200 application/json for %s", path)
+		return mt.Schema.Value.Properties
+	}
+
+	doc := api.Registry().OpenAPI()
+
+	health := props(t, doc, "/health")
+	assert.NotContains(t, health, "data", "/health should be raw (no data wrapper)")
+	assert.Contains(t, health, "status", "/health should document the raw model")
+
+	summary := props(t, doc, "/catalog/summary")
+	assert.NotContains(t, summary, "data", "/catalog/summary uses a custom data key")
+	assert.Contains(t, summary, "result", "/catalog/summary should use the result key")
+	assert.Contains(t, summary, "success", "/catalog/summary should include the success constant")
 }

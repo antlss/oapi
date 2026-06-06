@@ -7,12 +7,15 @@
 // typed binding of every request part (header/path/query/body); JSON, urlencoded
 // and multipart bodies incl. file uploads; validation-driven docs (required,
 // enum, format, bounds) including nested structs; binary file downloads; the
-// {data}/{error}/{meta} envelope with paging and custom headers; both route
+// default {data}/{error}/{meta} envelope with paging and custom headers, PLUS the
+// pluggable envelope seam — a per-route custom envelope (WithEnvelope +
+// KeyedEnvelope) and a raw, un-enveloped response (WithRawResponse); both route
 // kinds (NewRoute, NewRichRoute); typed middleware with context injection; every
 // route option (summary/description/tags/deprecated/response types/multi-response/
-// security/error-mapper/success-status); the full error model (HTTPError,
-// custom ErrorBody, aerror-shaped, ErrorMapper, field-level validation); and a
-// Registry with multiple servers and security schemes.
+// security/error-mapper/success-status/envelope); the full error model (HTTPError,
+// custom ErrorBody, aerror-shaped, per-route ErrorMapper, field-level validation),
+// plus a process-wide ErrorParser + custom envelope demonstrated end-to-end in
+// cmd/customized; and a Registry with multiple servers and security schemes.
 package api
 
 //go:generate go run ../cmd/openapi-gen -out ../openapi
@@ -226,11 +229,44 @@ var GetAsset = oapi.NewRoute(
 	oapi.WithSecurity("apiKey"),
 )
 
+// Health — a raw (un-enveloped) response. WithRawResponse drops the {data}
+// wrapper so the body IS the HealthStatus model, and the docs describe it the same
+// way. Useful for probes and any endpoint a project wants returned verbatim.
+var Health = oapi.NewRoute(
+	http.MethodGet, "/health",
+	func(_ context.Context, _ oapi.Request[struct{}, struct{}, struct{}, struct{}]) (*HealthStatus, error) {
+		return &HealthStatus{Status: "ok", Version: "v1"}, nil
+	},
+	oapi.WithSummary("Health check (raw response)"),
+	oapi.WithDescription("Returns the HealthStatus model with no envelope, via WithRawResponse()."),
+	oapi.WithTags("system"),
+	oapi.WithRawResponse(),
+)
+
+// CatalogSummaryRoute — a per-route custom envelope. WithEnvelope wraps the
+// payload in a project-specific {"result": ..., "success": true} shape; the
+// KeyedEnvelope drives both the wire body and the generated schema, so they cannot
+// drift. Other routes keep the default {data} envelope.
+var CatalogSummaryRoute = oapi.NewRoute(
+	http.MethodGet, "/catalog/summary",
+	func(_ context.Context, _ oapi.Request[struct{}, struct{}, struct{}, struct{}]) (*CatalogSummary, error) {
+		return &CatalogSummary{Products: 128, Categories: 7}, nil
+	},
+	oapi.WithSummary("Catalog summary (custom envelope)"),
+	oapi.WithDescription("Wraps the payload in a {result, success} envelope via WithEnvelope(KeyedEnvelope{...})."),
+	oapi.WithTags("catalog"),
+	oapi.WithEnvelope(oapi.KeyedEnvelope{
+		DataKey:   "result",
+		Constants: map[string]any{"success": true},
+	}),
+)
+
 // Routes returns every demo route in registration order.
 func Routes() []oapi.Route {
 	return []oapi.Route{
 		ListProducts, GetProduct, CreateProduct, UpdateProduct, PatchProduct,
 		DeleteProduct, UploadImages, DownloadManual, Subscribe, SalesReport, GetAsset,
+		Health, CatalogSummaryRoute,
 	}
 }
 
@@ -258,7 +294,8 @@ func Registry() *oapi.Registry {
 		AddTag("account", "Subscriptions and account actions").
 		AddTag("reports", "Reporting endpoints (some deprecated)").
 		AddTag("assets", "Binary asset retrieval").
+		AddTag("system", "Operational endpoints (health probe, raw response)").
 		TagGroup("Commerce", "catalog", "account").
-		TagGroup("Operations", "reports", "assets").
+		TagGroup("Operations", "reports", "assets", "system").
 		Add(Routes()...)
 }

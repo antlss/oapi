@@ -138,6 +138,169 @@
         ]
       }
     },
+    "/catalog/summary": {
+      "get": {
+        "description": "Wraps the payload in a {result, success} envelope via WithEnvelope(KeyedEnvelope{...}).",
+        "operationId": "get_catalog_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "properties": {
+                        "categories": {
+                          "example": 7,
+                          "type": "integer"
+                        },
+                        "products": {
+                          "example": 128,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "success": {
+                      "example": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Catalog summary (custom envelope)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Returns the HealthStatus model with no envelope, via WithRawResponse().",
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "example": "ok",
+                      "type": "string"
+                    },
+                    "version": {
+                      "example": "v1",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "example": "bad_request",
+                          "type": "string"
+                        },
+                        "fields": {
+                          "items": {
+                            "properties": {
+                              "field": {
+                                "example": "email",
+                                "type": "string"
+                              },
+                              "message": {
+                                "example": "email is required",
+                                "type": "string"
+                              },
+                              "rule": {
+                                "example": "required",
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "message": {
+                          "example": "request validation failed",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Health check (raw response)",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/products": {
       "get": {
         "description": "Search and page the catalog. Shows embedded query structs, enum/bound parameters and pagination meta.",
@@ -1952,6 +2115,10 @@
     {
       "description": "Binary asset retrieval",
       "name": "assets"
+    },
+    {
+      "description": "Operational endpoints (health probe, raw response)",
+      "name": "system"
     }
   ],
   "x-tagGroups": [
@@ -1966,7 +2133,8 @@
       "name": "Operations",
       "tags": [
         "reports",
-        "assets"
+        "assets",
+        "system"
       ]
     }
   ]
