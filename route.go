@@ -237,7 +237,7 @@ func (route Route) Invoke(c Carrier) {
 	ex := newExecution(c, route.cfg)
 	for _, mw := range route.typedBefore {
 		if err := mw(ex); err != nil {
-			renderError(ex, err, route.errorMapper)
+			renderError(ex, err, route.errorMapper, route.cfg.errorParserOrGlobal())
 			return
 		}
 	}
@@ -320,8 +320,10 @@ func writeSuccess[Response any](c Carrier, res *Response, successStatus int, map
 }
 
 // renderError renders a business error. Status resolution honours an optional
-// custom mapper, then HTTPError, then aerror-compatible duck typing, else 500.
-func renderError(c Carrier, err error, mapper ErrorMapper) {
+// custom mapper, then the configured ErrorParser, then HTTPError, then
+// aerror-compatible duck typing, else 500. parser is the route's App-scoped parser
+// (or the process-wide one for a route without an App).
+func renderError(c Carrier, err error, mapper ErrorMapper, parser ErrorParser) {
 	c.Abort()
-	_ = NewResult(nil).withErrorMapper(mapper).WithError(err).render(c)
+	_ = NewResult(nil).withErrorMapper(mapper).withErrorParser(parser).WithError(err).render(c)
 }

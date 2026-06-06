@@ -339,19 +339,27 @@ func setExtension(ext *map[string]any, key string, value any) {
 }
 
 // cloneDoc returns a deep copy of doc by round-tripping it through JSON, so the
-// generator can overlay onto a base document without mutating the caller's value
-// (mirrors the JSON round-trip in deAliasSchema). Returns nil on any error so
-// the caller falls back to building from scratch.
+// generator can overlay onto a base document without mutating the caller's value.
+// Returns nil on any error so the caller falls back to building from scratch.
 func cloneDoc(doc *openapi3.T) *openapi3.T {
-	raw, err := doc.MarshalJSON()
-	if err != nil {
-		return nil
-	}
 	clone := &openapi3.T{} //nolint:exhaustruct
-	if err := clone.UnmarshalJSON(raw); err != nil {
+	if err := jsonRoundTrip(doc, clone); err != nil {
 		return nil
 	}
 	return clone
+}
+
+// jsonRoundTrip deep-copies src into dst by marshalling src and unmarshalling the
+// bytes into dst, yielding an independent copy with no shared sub-pointers. Both
+// cloneDoc and deAliasSchema rely on it: the generator overlays onto a base
+// document and enriches per-field schemas without mutating the instances
+// openapi3/openapi3gen share. Each caller picks its own fallback on error.
+func jsonRoundTrip(src json.Marshaler, dst json.Unmarshaler) error {
+	raw, err := src.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	return dst.UnmarshalJSON(raw)
 }
 
 // JSON renders the OpenAPI document as indented JSON.

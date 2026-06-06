@@ -12,9 +12,11 @@ package oapi
 
 import (
 	"context"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sync"
 	"testing"
 )
@@ -36,10 +38,11 @@ type appOK struct {
 // appCarrier is a minimal in-memory oapi.Carrier for these tests (the shared
 // mockCarrier moved out with review_fixes_test.go). It records what was written.
 type appCarrier struct {
-	status   int
-	wrote    string // "json" | "bytes" | "empty"
-	jsonBody any
-	ctx      context.Context
+	status    int
+	wrote     string // "json" | "bytes" | "empty"
+	jsonBody  any
+	bytesBody []byte // raw body written via WriteBytes (e.g. a parser-owned error)
+	ctx       context.Context
 }
 
 func newAppCarrier() *appCarrier { return &appCarrier{ctx: context.Background()} } //nolint:exhaustruct
@@ -57,8 +60,8 @@ func (c *appCarrier) WriteJSON(s int, b any) error {
 	c.status, c.wrote, c.jsonBody = s, "json", b
 	return nil
 }
-func (c *appCarrier) WriteBytes(s int, _ string, _ []byte) error {
-	c.status, c.wrote = s, "bytes"
+func (c *appCarrier) WriteBytes(s int, _ string, b []byte) error {
+	c.status, c.wrote, c.bytesBody = s, "bytes", b
 	return nil
 }
 func (c *appCarrier) WriteEmpty(s int) error         { c.status, c.wrote = s, "empty"; return nil }
@@ -157,6 +160,74 @@ func TestApp_MaxRequestBytes(t *testing.T) {
 	noApp := appRoute(nil)
 	if _, ok := noApp.MaxRequestBytes(); ok {
 		t.Fatal("route without an App should report no configured cap (ok=false)")
+	}
+}
+
+// labelParser renders every error as {"parser":"<label>"} and documents that body
+// via ErrorType, so a test can tell which App's parser ran (runtime) and that the
+// docs follow the App's parser (generation).
+type labelParser struct{ label string }
+
+func (p labelParser) Resolve(error) (int, any, bool) {
+	return http.StatusTeapot, json.RawMessage(`{"parser":"` + p.label + `"}`), true
+}
+func (labelParser) ErrorType() reflect.Type { return reflect.TypeFor[appOK]() }
+
+// appErrRoute builds a route that always returns a business error, so the render
+// path runs the configured error parser. It needs no validator (empty body).
+func appErrRoute(app *App) Route {
+	opts := []RouteOption{}
+	if app != nil {
+		opts = append(opts, WithApp(app))
+	}
+	return NewRoute(
+		http.MethodPost, "/e",
+		func(_ context.Context, _ Request[struct{}, struct{}, struct{}, struct{}]) (*appOK, error) {
+			return nil, NewError(http.StatusInternalServerError, "boom", "boom")
+		},
+		opts...,
+	)
+}
+
+func TestApp_PerAppErrorParserIsIndependent(t *testing.T) {
+	// Two Apps, two parsers, one process: each must render its own error body.
+	a := New(WithErrorParser(labelParser{label: "A"}))
+	b := New(WithErrorParser(labelParser{label: "B"}))
+
+	ca := newAppCarrier()
+	appErrRoute(a).Invoke(ca)
+	if ca.status != http.StatusTeapot || string(ca.bytesBody) != `{"parser":"A"}` {
+		t.Fatalf("App A: (%d, %s), want (418, {\"parser\":\"A\"})", ca.status, ca.bytesBody)
+	}
+
+	cb := newAppCarrier()
+	appErrRoute(b).Invoke(cb)
+	if cb.status != http.StatusTeapot || string(cb.bytesBody) != `{"parser":"B"}` {
+		t.Fatalf("App B: (%d, %s), want (418, {\"parser\":\"B\"})", cb.status, cb.bytesBody)
+	}
+
+	// Docs side: the default error response is documented from the App parser's
+	// ErrorType (appOK has a "a" field), not the built-in {error} schema.
+	resp := responsesFor(appErrRoute(a), nil).Value("default")
+	schema := resp.Value.Content.Get("application/json").Schema.Value
+	if _, ok := schema.Properties["a"]; !ok {
+		t.Fatal("App error docs should follow the App parser's ErrorType()")
+	}
+	if _, ok := schema.Properties["error"]; ok {
+		t.Fatal("App error docs should not use the built-in {error} wrapper")
+	}
+}
+
+func TestApp_ErrorParserBackCompatGlobal(t *testing.T) {
+	// A route without an App must read the process-wide parser at render time.
+	saved := errorParser
+	t.Cleanup(func() { errorParser = saved })
+	SetErrorParser(labelParser{label: "global"})
+
+	c := newAppCarrier()
+	appErrRoute(nil).Invoke(c) // no App → global parser
+	if c.status != http.StatusTeapot || string(c.bytesBody) != `{"parser":"global"}` {
+		t.Fatalf("global parser path: (%d, %s), want (418, {\"parser\":\"global\"})", c.status, c.bytesBody)
 	}
 }
 

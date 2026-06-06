@@ -52,26 +52,19 @@ func notFoundAPIError(id int) apiError {
 	}
 }
 
-// 3) Sentinel domain errors translated by productErrorMapper. A handler can
-// return one of these as a plain error and have it rendered with the right
-// status — without knowing anything about HTTP.
-var (
-	errProductConflict = errors.New("product version conflict")
-	errProductGone     = errors.New("product permanently deleted")
-)
+// 3) Sentinel domain error translated by productErrorMapper. A handler can
+// return it as a plain error and have it rendered with the right status —
+// without knowing anything about HTTP.
+var errProductConflict = errors.New("product version conflict")
 
-// productErrorMapper maps the sentinel errors above to HTTP responses. A claiming
+// productErrorMapper maps the sentinel error above to an HTTP response. A claiming
 // mapper now owns the FULL wire body, so it returns the complete {"error":{...}}
 // envelope itself (the library no longer wraps it). Returning ok=false defers to
 // the global ErrorParser, then the default handling (HTTPError → aerror → 500).
 func productErrorMapper(err error) (int, any, bool) {
-	switch {
-	case errors.Is(err, errProductConflict):
+	if errors.Is(err, errProductConflict) {
 		return http.StatusConflict,
 			json.RawMessage(`{"error":{"code":"version_conflict","message":"the product was modified by someone else"}}`), true
-	case errors.Is(err, errProductGone):
-		return http.StatusGone,
-			json.RawMessage(`{"error":{"code":"gone","message":"the product was permanently deleted"}}`), true
 	}
 	return 0, nil, false
 }

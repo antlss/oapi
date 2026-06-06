@@ -110,11 +110,19 @@ var (
 // warning to catch the drift early.
 func SetErrorParser(p ErrorParser) {
 	errorParser = p
+	warnIfParserUndocumented(p)
+}
+
+// warnIfParserUndocumented logs a one-time warning when a non-nil parser cannot
+// describe its error body for the docs (ErrorType() == nil), so the resulting
+// docs/wire drift is caught early. Shared by [SetErrorParser] and the App's
+// [WithErrorParser].
+func warnIfParserUndocumented(p ErrorParser) {
 	if p != nil && p.ErrorType() == nil {
 		errorParserWarning.Do(func() {
-			log.Println("[oapi] SetErrorParser: the parser's ErrorType() is nil, so error " +
-				"responses are documented with the built-in error schema and may not match the " +
-				"body the parser renders. Return a non-nil ErrorType() to keep the docs in sync.")
+			log.Println("[oapi] error parser ErrorType() is nil, so error responses are " +
+				"documented with the built-in error schema and may not match the body the parser " +
+				"renders. Return a non-nil ErrorType() to keep the docs in sync.")
 		})
 	}
 }
@@ -136,13 +144,15 @@ type (
 const internalErrorMessage = "internal server error"
 
 // resolveError turns any error into the (status, body, wrap) triple to render.
-// mapper may be nil. The order is: per-route mapper -> global ErrorParser ->
-// HTTPError -> aerror-shaped duck typing -> 500 fallback. The first two layers OWN
-// the full wire body (wrap=false); the built-in layers produce the inner value
-// placed under the standard {"error": ...} envelope (wrap=true). Only errors that
-// opt into a status (a mapper/parser, HTTPError or aerror-shaped) expose their own
-// message; everything else is rendered with a generic, non-leaking 500 body.
-func resolveError(err error, mapper ErrorMapper) (int, json.RawMessage, bool) {
+// mapper may be nil. The order is: per-route mapper -> configured ErrorParser ->
+// HTTPError -> aerror-shaped duck typing -> 500 fallback. parser is the App-scoped
+// parser (or the process-wide one for a route without an App), resolved by the
+// caller. The first two layers OWN the full wire body (wrap=false); the built-in
+// layers produce the inner value placed under the standard {"error": ...} envelope
+// (wrap=true). Only errors that opt into a status (a mapper/parser, HTTPError or
+// aerror-shaped) expose their own message; everything else is rendered with a
+// generic, non-leaking 500 body.
+func resolveError(err error, mapper ErrorMapper, parser ErrorParser) (int, json.RawMessage, bool) {
 	// 1. Per-route mapper — owns the full wire body.
 	if mapper != nil {
 		if status, body, ok := mapper(err); ok {
@@ -152,9 +162,10 @@ func resolveError(err error, mapper ErrorMapper) (int, json.RawMessage, bool) {
 		}
 	}
 
-	// 2. Process-wide ErrorParser — owns the full wire body.
-	if errorParser != nil {
-		if status, body, ok := errorParser.Resolve(err); ok {
+	// 2. Configured ErrorParser (App-scoped, or the process-wide one for a route
+	// without an App) — owns the full wire body.
+	if parser != nil {
+		if status, body, ok := parser.Resolve(err); ok {
 			if raw, mErr := marshalErrorBody(body); mErr == nil {
 				return sanitizeErrorStatus(status), raw, false
 			}

@@ -36,15 +36,16 @@ func NewRoute[Header, Param, Query, Body, Response any](
 	mapper := route.errorMapper
 	env := route.envelope
 	route.invoke = func(ex *execution) {
+		parser := ex.cfg.errorParserOrGlobal()
 		req, err := cachedRequest[Header, Param, Query, Body](ex)
 		if err != nil {
-			renderError(ex, err, mapper)
+			renderError(ex, err, mapper, parser)
 			return
 		}
 
 		res, err := handler(ex.Context(), req)
 		if err != nil {
-			renderError(ex, err, mapper)
+			renderError(ex, err, mapper, parser)
 			return
 		}
 
@@ -68,15 +69,16 @@ func NewRichRoute[Header, Param, Query, Body any](
 	mapper := route.errorMapper
 	env := route.envelope
 	route.invoke = func(ex *execution) {
+		parser := ex.cfg.errorParserOrGlobal()
 		req, err := cachedRequest[Header, Param, Query, Body](ex)
 		if err != nil {
-			renderError(ex, err, mapper)
+			renderError(ex, err, mapper, parser)
 			return
 		}
 
 		res, err := handler(ex.Context(), req)
 		if err != nil {
-			renderError(ex, err, mapper)
+			renderError(ex, err, mapper, parser)
 			return
 		}
 
@@ -85,7 +87,7 @@ func NewRichRoute[Header, Param, Query, Body any](
 			return
 		}
 
-		res.withErrorMapper(mapper)
+		res.withErrorMapper(mapper).withErrorParser(parser)
 		// Inject the route's envelope only when the handler's constructor did not
 		// pin one (NewResult pins RawEnvelope; NewDataResult leaves it to inherit).
 		if res.envelope == nil {

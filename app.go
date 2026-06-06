@@ -1,8 +1,9 @@
 package oapi
 
 // App is an immutable bundle of the configuration the library otherwise reads
-// from process-wide globals — the [Validator], the success [ResponseEnvelope] and
-// the request body cap. Build one with [New], attach it to routes with [WithApp],
+// from process-wide globals — the [Validator], the success [ResponseEnvelope],
+// the [ErrorParser] and the request body cap. Build one with [New], attach it to
+// routes with [WithApp],
 // and every request those routes serve reads its configuration from the App rather
 // than the globals.
 //
@@ -16,9 +17,11 @@ package oapi
 // An App is safe for concurrent use: its configuration is snapshotted at [New]
 // time and never mutated afterwards.
 //
-// Scope note: the [ErrorParser] and the [RuleTag] remain process-wide (the doc
-// generator reads them from package globals); see [WithRuleTag] and
-// [SetErrorParser]. App-scoping those is a planned follow-up.
+// Scope note: the [RuleTag] is intentionally process-wide — it is a
+// reflection-time struct-tag name read by the doc generator, not per-request
+// state — so set the exported [RuleTag] variable directly rather than per App.
+// Everything that varies per request (validator, response envelope, error parser
+// and request body cap) is App-scoped.
 type App struct {
 	cfg *appConfig
 }
@@ -31,6 +34,7 @@ type appConfig struct {
 	validator    Validator
 	validatorSet bool
 	envelope     ResponseEnvelope
+	errorParser  ErrorParser
 	maxBodyBytes int64
 	hasMaxBody   bool
 }
@@ -47,6 +51,7 @@ func New(opts ...Option) *App {
 		validator:    validatorImpl,
 		validatorSet: validatorConfigured,
 		envelope:     responseEnvelope,
+		errorParser:  errorParser,
 		maxBodyBytes: 0,
 		hasMaxBody:   false,
 	}
@@ -78,16 +83,15 @@ func WithResponseEnvelope(e ResponseEnvelope) Option {
 	}
 }
 
-// WithRuleTag sets the struct tag the OpenAPI generator and the validator read for
-// validation rules (see [RuleTag]). NOTE: the rule tag is process-wide — it is read
-// by the doc generator from a package global — so this option sets that global and
-// affects the whole process, not just this App. It exists on the App for a single,
-// declarative configuration site; call it once at startup.
-func WithRuleTag(tag string) Option {
-	return func(*appConfig) {
-		if tag != "" {
-			RuleTag = tag
-		}
+// WithErrorParser sets the [ErrorParser] this App's routes use to render AND
+// document errors, scoping per App what [SetErrorParser] does process-wide. Passing
+// nil disables the parser for the App (errors fall back to the built-in
+// HTTPError/aerror recognition). Like the global setter, a parser whose ErrorType()
+// is nil logs a one-time docs-drift warning.
+func WithErrorParser(p ErrorParser) Option {
+	return func(c *appConfig) {
+		c.errorParser = p
+		warnIfParserUndocumented(p)
 	}
 }
 
@@ -131,4 +135,15 @@ func (c *appConfig) validatorOrGlobal() (Validator, bool) {
 		return validatorImpl, validatorConfigured
 	}
 	return c.validator, c.validatorSet
+}
+
+// errorParserOrGlobal returns the App's error parser, or the process-wide global
+// when the config is nil (a route built without an App). Both the render path and
+// the doc generator read it, so an App scopes error handling exactly the way it
+// scopes validation and the response envelope.
+func (c *appConfig) errorParserOrGlobal() ErrorParser {
+	if c == nil {
+		return errorParser
+	}
+	return c.errorParser
 }

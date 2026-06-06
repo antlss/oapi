@@ -165,12 +165,8 @@ func bodyHasRequiredField(t reflect.Type) bool {
 // independent tree so each property can be enriched in isolation. On any error it
 // falls back to the original (no worse than before).
 func deAliasSchema(s *openapi3.Schema) *openapi3.Schema {
-	raw, err := s.MarshalJSON()
-	if err != nil {
-		return s
-	}
 	clone := &openapi3.Schema{} //nolint:exhaustruct
-	if err := clone.UnmarshalJSON(raw); err != nil {
+	if err := jsonRoundTrip(s, clone); err != nil {
 		return s
 	}
 	return clone
@@ -348,6 +344,7 @@ func formRequestBody(t reflect.Type) *openapi3.RequestBody {
 func responsesFor(route Route, set *schemaSet) *openapi3.Responses {
 	doc := route.doc
 	env := resolveEnvelope(route.envelope)
+	parser := route.cfg.errorParserOrGlobal()
 	successStatus := route.successStatus
 	if successStatus == 0 {
 		switch {
@@ -396,7 +393,7 @@ func responsesFor(route Route, set *schemaSet) *openapi3.Responses {
 			if rd.typ != nil {
 				resp = resp.WithJSONSchemaRef(typeSchemaRef(rd.typ, set))
 			} else {
-				resp = resp.WithJSONSchemaRef(errorSchemaRef(set))
+				resp = resp.WithJSONSchemaRef(errorSchemaRef(parser, set))
 			}
 		case rd.typ != nil:
 			resp = resp.WithJSONSchemaRef(env.WrapSchema(typeSchemaRef(rd.typ, set), nil))
@@ -405,7 +402,7 @@ func responsesFor(route Route, set *schemaSet) *openapi3.Responses {
 	}
 
 	// Generic catch-all error response.
-	opts = append(opts, openapi3.WithName("default", errorResponse(set)))
+	opts = append(opts, openapi3.WithName("default", errorResponse(parser, set)))
 
 	return openapi3.NewResponses(opts...)
 }
@@ -436,9 +433,9 @@ func binaryContent(contentType string) openapi3.Content {
 // [ErrorParser]'s body type when it describes one, else the built-in
 // {"error": ...} schema. Both the per-status error responses and the default
 // catch-all use it, so they can never describe different shapes.
-func errorSchemaRef(set *schemaSet) *openapi3.SchemaRef {
-	if errorParser != nil {
-		if t := errorParser.ErrorType(); t != nil {
+func errorSchemaRef(parser ErrorParser, set *schemaSet) *openapi3.SchemaRef {
+	if parser != nil {
+		if t := parser.ErrorType(); t != nil {
 			return typeSchemaRef(t, set)
 		}
 	}
@@ -511,10 +508,10 @@ func errorEnvelopeSchemaRef() *openapi3.SchemaRef {
 
 // errorResponse is the generic "default" error response, using the same error
 // schema as the per-status error responses (see errorSchemaRef).
-func errorResponse(set *schemaSet) *openapi3.Response {
+func errorResponse(parser ErrorParser, set *schemaSet) *openapi3.Response {
 	return openapi3.NewResponse().
 		WithDescription("Error").
-		WithJSONSchemaRef(errorSchemaRef(set))
+		WithJSONSchemaRef(errorSchemaRef(parser, set))
 }
 
 func scalarSchema(t reflect.Type) *openapi3.Schema {

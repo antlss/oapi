@@ -27,6 +27,7 @@ type Result struct {
 
 	headers     [][2]string
 	errorMapper ErrorMapper
+	errorParser ErrorParser
 	envelope    ResponseEnvelope
 }
 
@@ -130,6 +131,13 @@ func (r *Result) withErrorMapper(m ErrorMapper) *Result {
 	return r
 }
 
+// withErrorParser wires the configured error parser (App-scoped, or the global for
+// a route without an App) so render can resolve errors through it.
+func (r *Result) withErrorParser(p ErrorParser) *Result {
+	r.errorParser = p
+	return r
+}
+
 // withEnvelope wires the route's success envelope so render can wrap the payload.
 func (r *Result) withEnvelope(e ResponseEnvelope) *Result {
 	r.envelope = e
@@ -156,6 +164,7 @@ func (r *Result) render(c Carrier) error {
 			c.Abort()
 			return NewResult(nil).
 				withErrorMapper(r.errorMapper).
+				withErrorParser(r.errorParser).
 				WithError(NewError(http.StatusInternalServerError, "render_error", "file result data is not []byte")).
 				render(c)
 		}
@@ -168,7 +177,7 @@ func (r *Result) render(c Carrier) error {
 		// honoured even when a RichHandler built this Result via WithError before
 		// the mapper was attached (handler.go wires it only after the handler
 		// returns). An explicit WithStatus still wins.
-		status, body, wrap := resolveError(r.bizErr, r.errorMapper)
+		status, body, wrap := resolveError(r.bizErr, r.errorMapper, r.errorParser)
 		if !r.statusOverride {
 			r.Status = status
 		}
