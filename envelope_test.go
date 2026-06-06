@@ -125,7 +125,7 @@ func TestNewListDataResult(t *testing.T) {
 
 func successSchema(t *testing.T, route Route) *openapi3.Schema {
 	t.Helper()
-	resp := responsesFor(route).Status(http.StatusOK)
+	resp := responsesFor(route, nil).Status(http.StatusOK)
 	if resp == nil || resp.Value == nil {
 		t.Fatal("no 200 response")
 	}
@@ -198,7 +198,7 @@ func TestErrorParserOwnsBodyAndDocs(t *testing.T) {
 
 	// Docs: the default error response is documented from ErrorType(), not the
 	// built-in {error} schema.
-	resp := responsesFor(widgetRoute()).Value("default")
+	resp := responsesFor(widgetRoute(), nil).Value("default")
 	schema := resp.Value.Content.Get("application/json").Schema.Value
 	if _, ok := schema.Properties["name"]; !ok {
 		t.Fatalf("error docs should follow ErrorType(), got %v", keysOf(schema.Properties))
@@ -212,7 +212,7 @@ func TestWithResponseErrorStatusIsNotDataWrapped(t *testing.T) {
 	// A documented error status with a body type is the full error body, never
 	// {data: T} (the bug this fix addresses).
 	route := widgetRoute(WithResponse[widget](http.StatusConflict, "conflict"))
-	resp := responsesFor(route).Status(http.StatusConflict)
+	resp := responsesFor(route, nil).Status(http.StatusConflict)
 	schema := resp.Value.Content.Get("application/json").Schema.Value
 	if _, ok := schema.Properties["data"]; ok {
 		t.Fatal("error-status WithResponse[T] must not wrap in {data}")

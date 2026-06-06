@@ -32,6 +32,7 @@ type Registry struct {
 	tags           []*openapi3.Tag // top-level tag descriptions, in declared order
 	tagGroups      []tagGroup      // Redoc x-tagGroups navigation sections
 	base           *openapi3.T     // optional base/common document overlaid onto
+	useComponents  bool            // emit named response types as $ref components
 }
 
 // tagGroup is one Redoc x-tagGroups entry: a named navigation section grouping a
@@ -55,6 +56,18 @@ func (rg *Registry) Add(routes ...Route) *Registry {
 // Describe sets the API description shown in the docs.
 func (rg *Registry) Describe(description string) *Registry {
 	rg.description = description
+	return rg
+}
+
+// UseComponents makes the generator emit each named response/data/meta/error
+// struct type once under components/schemas and reference it by $ref wherever it
+// appears, instead of inlining a copy at every use. This produces smaller, more
+// idiomatic specs for APIs that share types across endpoints. It is opt-in: the
+// default inlines every schema (so output is unchanged unless you call this).
+// Request bodies stay inline, since they carry per-field binding constraints a
+// shared response component must not.
+func (rg *Registry) UseComponents() *Registry {
+	rg.useComponents = true
 	return rg
 }
 
@@ -200,11 +213,40 @@ func (rg *Registry) OpenAPI() *openapi3.T {
 
 	rg.applySecuritySchemes(doc)
 
-	for _, route := range rg.routes {
-		rg.addRoute(doc, route)
+	// When components are enabled, named response/data/meta/error types are
+	// collected into this set as $ref components; a nil set inlines everything (the
+	// default), keeping the output byte-identical.
+	var set *schemaSet
+	if rg.useComponents {
+		set = newSchemaSet()
 	}
 
+	for _, route := range rg.routes {
+		rg.addRoute(doc, route, set)
+	}
+
+	rg.applyComponentSchemas(doc, set)
+
 	return doc
+}
+
+// applyComponentSchemas merges the collected component schemas into the document,
+// creating the components container as needed. Generated schemas are merged last,
+// so they win over a same-named schema from a configured base document (mirroring
+// how generated paths are merged). A nil/empty set is a no-op.
+func (rg *Registry) applyComponentSchemas(doc *openapi3.T, set *schemaSet) {
+	if set.empty() {
+		return
+	}
+	if doc.Components == nil {
+		doc.Components = &openapi3.Components{} //nolint:exhaustruct
+	}
+	if doc.Components.Schemas == nil {
+		doc.Components.Schemas = openapi3.Schemas{}
+	}
+	for name, ref := range set.schemas {
+		doc.Components.Schemas[name] = ref
+	}
 }
 
 // baseDocument returns the document to build onto: a copy of the configured base
@@ -360,7 +402,7 @@ func (rg *Registry) Validate(ctx context.Context) error {
 	return rg.OpenAPI().Validate(ctx)
 }
 
-func (rg *Registry) addRoute(doc *openapi3.T, route Route) {
+func (rg *Registry) addRoute(doc *openapi3.T, route Route, set *schemaSet) {
 	rd := route.doc
 	op := &openapi3.Operation{ //nolint:exhaustruct
 		Summary:     rd.summary,
@@ -382,11 +424,11 @@ func (rg *Registry) addRoute(doc *openapi3.T, route Route) {
 	}
 
 	// Request body (JSON / multipart / urlencoded).
-	if rb := requestBody(rd.schema.Body); rb != nil {
+	if rb := requestBody(rd.schema.Body, set); rb != nil {
 		op.RequestBody = &openapi3.RequestBodyRef{Value: rb} //nolint:exhaustruct
 	}
 
-	op.Responses = responsesFor(route)
+	op.Responses = responsesFor(route, set)
 
 	// Security requirements (AND of the declared schemes).
 	if len(rd.security) > 0 {

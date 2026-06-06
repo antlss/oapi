@@ -183,7 +183,9 @@ var UploadImages = oapi.NewRoute(
 )
 
 // DownloadManual — a binary file download. NewResult([]byte).WithFile sets a safe
-// Content-Disposition and streams the bytes (no {data} envelope).
+// Content-Disposition and streams the bytes (no {data} envelope). WithBinaryResponse
+// documents the 200 response as an application/pdf stream so the docs match the
+// bytes on the wire instead of defaulting to 204 No Content.
 var DownloadManual = oapi.NewRichRoute(
 	http.MethodGet, "/products/:id/manual",
 	func(_ context.Context, req oapi.Request[struct{}, ProductURI, struct{}, struct{}]) (*oapi.Result, error) {
@@ -192,6 +194,7 @@ var DownloadManual = oapi.NewRichRoute(
 	},
 	oapi.WithSummary("Download the product manual (binary)"),
 	oapi.WithTags("catalog"),
+	oapi.WithBinaryResponse("application/pdf", "The product manual as a PDF file"),
 )
 
 // Subscribe — an application/x-www-form-urlencoded body (only `form` tags, no

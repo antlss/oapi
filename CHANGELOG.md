@@ -14,6 +14,28 @@ apply.
 
 ### Added
 
+- **Reusable component schemas** (`Registry.UseComponents()`, opt-in). Named
+  response/data/meta/error struct types are emitted once under
+  `components/schemas` and referenced by `$ref` everywhere they appear, instead
+  of being inlined at every use — smaller, more idiomatic specs for APIs that
+  share types. Off by default, so existing output is unchanged. Request bodies
+  stay inline (they carry per-field binding constraints a shared response
+  component must not).
+- **Field descriptions in the docs** via the `doc:"..."` struct tag (with
+  `description:"..."` accepted as an alias) on request, response and parameter
+  fields.
+- **Wider validation-rule → schema coverage**: go-playground string rules
+  (`alpha`, `alphanum`, `numeric`, `startswith=`, `endswith=`, `contains=`)
+  now generate an OpenAPI `pattern`; unsigned integer fields document
+  `minimum: 0`; `time.Time` fields document as `format: date-time` for
+  parameters and form bodies (matching JSON bodies).
+- **App-scoped configuration** (`oapi.New` + `WithApp`). Bundle the validator,
+  response envelope and request body cap into an immutable `App` and attach it
+  to routes, instead of relying on process-wide globals — thread-safe and
+  composable. The global `Set*` API still works for routes built without an App.
+- **Test harness** (`github.com/antlss/oapi/oapitest`) for unit-testing typed
+  handlers without a running server or router.
+- **Echo and chi adapters** (`adapter/echo`, `adapter/chi`).
 - **Pluggable response envelope** (`ResponseEnvelope` seam). The success-body
   wrapper is now swappable per route (`WithEnvelope`, `WithRawResponse`) or
   process-wide (`SetResponseEnvelope`). The declarative `KeyedEnvelope` (data

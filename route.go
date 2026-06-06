@@ -52,6 +52,19 @@ type routeDoc struct {
 	deprecated  bool
 	responses   []responseDoc
 	security    []securityRequirement
+	// binary, when set, documents the success response as a binary stream (a file
+	// download) instead of a JSON body. A RichHandler's *Result body cannot be
+	// inferred from generics, so without this a file route (Result.WithFile) would
+	// default to 204 No Content in the docs while returning 200 with bytes at
+	// runtime. Set via [WithBinaryResponse]. nil means "not a binary response".
+	binary *binaryResponse
+}
+
+// binaryResponse documents a binary (file-download) success response: the media
+// type written on the wire and a human description.
+type binaryResponse struct {
+	contentType string
+	description string
 }
 
 // erasedMiddleware is a type-erased typed middleware: it parses (shared cache),
@@ -169,6 +182,20 @@ func WithEnvelope(e ResponseEnvelope) RouteOption {
 // WithEnvelope(RawEnvelope).
 func WithRawResponse() RouteOption {
 	return func(route *Route) { route.envelope = RawEnvelope }
+}
+
+// WithBinaryResponse documents the success response as a binary stream — a file
+// download — with the given media type (empty defaults to
+// "application/octet-stream") and description. Use it for file-download
+// RichHandlers (those returning [Result.WithFile]), whose body cannot be inferred
+// from generics: without it the docs would default to 204 No Content while the
+// handler returns 200 with bytes. It sets the documented success status to 200
+// unless an explicit [WithSuccessStatus] overrides it. Documentation only — the
+// handler still streams the bytes at runtime.
+func WithBinaryResponse(contentType, description string) RouteOption {
+	return func(route *Route) {
+		route.doc.binary = &binaryResponse{contentType: contentType, description: description}
+	}
 }
 
 func newBaseRoute[Header, Param, Query, Body, Response any](

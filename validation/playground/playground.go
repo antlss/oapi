@@ -53,6 +53,14 @@ func New() *Validator {
 // Validate checks value (a pointer to a bound request part) against its rules,
 // reporting field names using the wire names of the given source.
 func (v *Validator) Validate(value any, source string) error {
+	// go-playground's Struct only accepts a struct (or a pointer to one). A
+	// top-level non-struct body — a JSON array, map or scalar — carries no
+	// struct-tag rules to enforce, so accept it here rather than letting Struct
+	// return an InvalidValidationError that translate would turn into a 400,
+	// rejecting EVERY request to such a route.
+	if !pointsAtStruct(value) {
+		return nil
+	}
 	engine := v.bySource[source]
 	if engine == nil {
 		engine = v.bySource["json"]
@@ -63,10 +71,22 @@ func (v *Validator) Validate(value any, source string) error {
 	return nil
 }
 
+// pointsAtStruct reports whether value ultimately resolves to a struct — the only
+// kind go-playground's Struct validates. The binder always passes a pointer, so we
+// follow pointer levels before checking the kind.
+func pointsAtStruct(value any) bool {
+	t := reflect.TypeOf(value)
+	for t != nil && t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t != nil && t.Kind() == reflect.Struct
+}
+
 // translate converts go-playground failures into the library's field-level 400.
-// A non-ValidationErrors failure (e.g. an unsupported top-level body type such
-// as a JSON array) is rendered as a generic 400 rather than leaking the internal
-// validator message to the client.
+// A non-ValidationErrors failure (e.g. a struct field whose custom validation
+// errored) is rendered as a generic 400 rather than leaking the internal
+// validator message to the client. Non-struct bodies never reach here — Validate
+// skips them (see pointsAtStruct).
 func translate(err error) error {
 	var verrs validator.ValidationErrors
 	if !errors.As(err, &verrs) {

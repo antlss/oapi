@@ -5,15 +5,20 @@ import (
 	"mime/multipart"
 	"net/http"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3gen"
 )
 
-var fileHeaderType = reflect.TypeFor[multipart.FileHeader]()
+var (
+	fileHeaderType = reflect.TypeFor[multipart.FileHeader]()
+	timeType       = reflect.TypeFor[time.Time]()
+)
 
 // rangeFields calls fn for each exported field of struct type t, recursing into
 // embedded (anonymous) struct fields so their promoted fields are visited too.
@@ -73,10 +78,24 @@ func paramsFromStruct(t reflect.Type, in, tagKey string) []*openapi3.Parameter {
 	return params
 }
 
-func requestBody(t reflect.Type) *openapi3.RequestBody {
+func requestBody(t reflect.Type, set *schemaSet) *openapi3.RequestBody {
 	t = deref(t)
-	if t == nil || t.Kind() != reflect.Struct {
+	if t == nil {
 		return nil
+	}
+	if t.Kind() != reflect.Struct {
+		// A top-level non-struct JSON body (e.g. a bulk POST whose body is a
+		// []Item). bindJSON unmarshals it at runtime, so document its schema too
+		// rather than emitting no body. Only slice/array/map shapes are meaningful
+		// as a JSON body; anything else is treated as "no documented body". Such a
+		// body carries no top-level `binding` rules (no validation overlay) and is
+		// documented as not strictly required.
+		switch t.Kind() {
+		case reflect.Slice, reflect.Array, reflect.Map:
+			return openapi3.NewRequestBody().WithJSONSchemaRef(typeSchemaRef(t, set))
+		default:
+			return nil
+		}
 	}
 
 	if isFormBody(t) {
@@ -216,13 +235,33 @@ func enrichNestedSchema(prop *openapi3.Schema, t reflect.Type, withBinding bool)
 
 // applyExample reads the example:"" struct tag and sets it as the schema example
 // (parsed to the field's Go type), so the docs show a real sample value instead
-// of a type placeholder. No tag leaves the schema untouched.
+// of a type placeholder, and applies any field description (see applyDescription).
+// No tag leaves the schema untouched.
 func applyExample(schema *openapi3.Schema, field reflect.StructField) {
 	if schema == nil {
 		return
 	}
 	if raw, ok := field.Tag.Lookup("example"); ok && raw != "" {
 		schema.Example = parseExample(raw, field.Type)
+	}
+	applyDescription(schema, field)
+}
+
+// applyDescription reads a human field description from the doc:"" struct tag
+// (with description:"" accepted as an alias) and sets it as the schema
+// description, so generated docs explain each field. No tag leaves the schema
+// untouched. It is applied wherever a field's example is, so params, request
+// bodies and response bodies all carry their descriptions.
+func applyDescription(schema *openapi3.Schema, field reflect.StructField) {
+	if schema == nil {
+		return
+	}
+	if raw, ok := field.Tag.Lookup("doc"); ok && raw != "" {
+		schema.Description = raw
+		return
+	}
+	if raw, ok := field.Tag.Lookup("description"); ok && raw != "" {
+		schema.Description = raw
 	}
 }
 
@@ -306,14 +345,18 @@ func formRequestBody(t reflect.Type) *openapi3.RequestBody {
 		WithSchemaRef(openapi3.NewSchemaRef("", schema), []string{mediaType})
 }
 
-func responsesFor(route Route) *openapi3.Responses {
+func responsesFor(route Route, set *schemaSet) *openapi3.Responses {
 	doc := route.doc
 	env := resolveEnvelope(route.envelope)
 	successStatus := route.successStatus
 	if successStatus == 0 {
-		if doc.schema.Response == nil {
+		switch {
+		case doc.binary != nil:
+			// A documented binary download returns 200 with bytes, not 204.
+			successStatus = http.StatusOK
+		case doc.schema.Response == nil:
 			successStatus = http.StatusNoContent
-		} else {
+		default:
 			successStatus = http.StatusOK
 		}
 	}
@@ -321,9 +364,17 @@ func responsesFor(route Route) *openapi3.Responses {
 	opts := make([]openapi3.NewResponsesOption, 0, len(doc.responses)+2)
 
 	successResp := openapi3.NewResponse().WithDescription(http.StatusText(successStatus))
-	if doc.schema.Response != nil && successStatus != http.StatusNoContent {
+	switch {
+	case doc.binary != nil && successStatus != http.StatusNoContent:
+		// Binary (file-download) body: document the declared media type with a
+		// string/binary schema instead of the JSON success envelope.
+		if doc.binary.description != "" {
+			successResp = successResp.WithDescription(doc.binary.description)
+		}
+		successResp = successResp.WithContent(binaryContent(doc.binary.contentType))
+	case doc.schema.Response != nil && successStatus != http.StatusNoContent:
 		successResp = successResp.WithJSONSchemaRef(
-			env.WrapSchema(typeSchemaRef(doc.schema.Response), metaSchemaRef(doc.schema.Meta)))
+			env.WrapSchema(typeSchemaRef(doc.schema.Response, set), metaSchemaRef(doc.schema.Meta, set)))
 	}
 	opts = append(opts, openapi3.WithStatus(successStatus, &openapi3.ResponseRef{Value: successResp})) //nolint:exhaustruct
 
@@ -343,18 +394,18 @@ func responsesFor(route Route) *openapi3.Responses {
 			// body type is the full error body, otherwise use the configured error
 			// schema.
 			if rd.typ != nil {
-				resp = resp.WithJSONSchemaRef(typeSchemaRef(rd.typ))
+				resp = resp.WithJSONSchemaRef(typeSchemaRef(rd.typ, set))
 			} else {
-				resp = resp.WithJSONSchemaRef(errorSchemaRef())
+				resp = resp.WithJSONSchemaRef(errorSchemaRef(set))
 			}
 		case rd.typ != nil:
-			resp = resp.WithJSONSchemaRef(env.WrapSchema(typeSchemaRef(rd.typ), nil))
+			resp = resp.WithJSONSchemaRef(env.WrapSchema(typeSchemaRef(rd.typ, set), nil))
 		}
 		opts = append(opts, openapi3.WithStatus(rd.status, &openapi3.ResponseRef{Value: resp})) //nolint:exhaustruct
 	}
 
 	// Generic catch-all error response.
-	opts = append(opts, openapi3.WithName("default", errorResponse()))
+	opts = append(opts, openapi3.WithName("default", errorResponse(set)))
 
 	return openapi3.NewResponses(opts...)
 }
@@ -362,43 +413,69 @@ func responsesFor(route Route) *openapi3.Responses {
 // metaSchemaRef builds the schema for an envelope's meta type, or nil when no meta
 // type is declared (so the envelope omits the meta key), mirroring how Result only
 // emits meta when it is attached.
-func metaSchemaRef(t reflect.Type) *openapi3.SchemaRef {
+func metaSchemaRef(t reflect.Type, set *schemaSet) *openapi3.SchemaRef {
 	if t == nil {
 		return nil
 	}
-	return typeSchemaRef(t)
+	return typeSchemaRef(t, set)
+}
+
+// binaryContent builds the OpenAPI content for a binary (file-download) response:
+// a string schema with format "binary" under the given media type (empty defaults
+// to application/octet-stream), the standard way to describe a downloadable file.
+func binaryContent(contentType string) openapi3.Content {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	schema := openapi3.NewStringSchema()
+	schema.Format = "binary"
+	return openapi3.NewContentWithSchemaRef(openapi3.NewSchemaRef("", schema), []string{contentType})
 }
 
 // errorSchemaRef is the schema for documented error responses: the configured
 // [ErrorParser]'s body type when it describes one, else the built-in
 // {"error": ...} schema. Both the per-status error responses and the default
 // catch-all use it, so they can never describe different shapes.
-func errorSchemaRef() *openapi3.SchemaRef {
+func errorSchemaRef(set *schemaSet) *openapi3.SchemaRef {
 	if errorParser != nil {
 		if t := errorParser.ErrorType(); t != nil {
-			return typeSchemaRef(t)
+			return typeSchemaRef(t, set)
 		}
 	}
 	return errorEnvelopeSchemaRef()
 }
 
 // typeSchemaRef builds an example-enriched schema for a single Go type, overlaying
-// any example:"" tags so the docs show sample output. The schema is de-aliased
-// first, since openapi3gen shares one *Schema per Go type and setting an example
-// would otherwise bleed across all same-typed fields. No `binding` overlay: a
+// any example:"" tags so the docs show sample output. No `binding` overlay: a
 // response carries no input contract.
-func typeSchemaRef(t reflect.Type) *openapi3.SchemaRef {
+//
+// When set is non-nil (the Registry opted into components), a named struct type —
+// or the element of a slice of one — is registered as a reusable
+// #/components/schemas entry and returned as a $ref, so a type shared across
+// endpoints is described once. A nil set inlines everything, the default, so the
+// generated schema is byte-identical to before. The schema is de-aliased first,
+// since openapi3gen shares one *Schema per Go type and setting an example would
+// otherwise bleed across all same-typed fields.
+func typeSchemaRef(t reflect.Type, set *schemaSet) *openapi3.SchemaRef {
 	dt := deref(t)
-	ref, err := openapi3gen.NewSchemaRefForValue(reflect.New(dt).Elem().Interface(), nil)
-	switch {
-	case err != nil:
-		ref = openapi3.NewSchemaRef("", openapi3.NewObjectSchema())
-	case ref.Value != nil:
-		s := deAliasSchema(ref.Value)
-		enrichNestedSchema(s, dt, false) // examples only; handles struct or []struct
-		ref = openapi3.NewSchemaRef("", s)
+	if dt == nil {
+		return openapi3.NewSchemaRef("", openapi3.NewObjectSchema())
 	}
-	return ref
+	// A named struct → a reusable component (nil set / unnameable type → inline).
+	if ref := set.componentRef(dt); ref != nil {
+		return ref
+	}
+	// A slice/array of a named struct → an array whose items $ref the component.
+	if set != nil && (dt.Kind() == reflect.Slice || dt.Kind() == reflect.Array) {
+		if elemRef := set.componentRef(dt.Elem()); elemRef != nil {
+			arr := openapi3.NewArraySchema()
+			arr.Items = elemRef
+			return openapi3.NewSchemaRef("", arr)
+		}
+	}
+	// Inline: the original behaviour (also the path for scalars, maps and slices of
+	// non-struct elements).
+	return openapi3.NewSchemaRef("", buildTypeSchema(dt))
 }
 
 // strSchemaWithExample is a string schema carrying an example value.
@@ -434,10 +511,10 @@ func errorEnvelopeSchemaRef() *openapi3.SchemaRef {
 
 // errorResponse is the generic "default" error response, using the same error
 // schema as the per-status error responses (see errorSchemaRef).
-func errorResponse() *openapi3.Response {
+func errorResponse(set *schemaSet) *openapi3.Response {
 	return openapi3.NewResponse().
 		WithDescription("Error").
-		WithJSONSchemaRef(errorSchemaRef())
+		WithJSONSchemaRef(errorSchemaRef(set))
 }
 
 func scalarSchema(t reflect.Type) *openapi3.Schema {
@@ -446,12 +523,27 @@ func scalarSchema(t reflect.Type) *openapi3.Schema {
 		return openapi3.NewStringSchema()
 	}
 
+	// time.Time binds from an RFC 3339 string (see decodeTime), so document it as a
+	// date-time string rather than the struct it is — matching how a JSON body's
+	// time field is rendered, so params/form and body agree.
+	if t == timeType {
+		s := openapi3.NewStringSchema()
+		s.Format = "date-time"
+		return s
+	}
+
 	switch t.Kind() {
 	case reflect.Bool:
 		return openapi3.NewBoolSchema()
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return openapi3.NewIntegerSchema()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		// Unsigned integers can never be negative; document the floor of 0 so the
+		// schema reflects the Go type's domain.
+		s := openapi3.NewIntegerSchema()
+		zero := 0.0
+		s.Min = &zero
+		return s
 	case reflect.Float32, reflect.Float64:
 		numberType := openapi3.Types{openapi3.TypeNumber}
 		schema := openapi3.NewSchema()
@@ -586,7 +678,49 @@ func applyBinding(schema *openapi3.Schema, t reflect.Type, bindingTag string) {
 		case "len":
 			setLowerBound(schema, kind, val, false)
 			setUpperBound(schema, kind, val, false)
+		case "alpha", "alphanum", "numeric", "number", "startswith", "endswith", "contains":
+			// String-shape rules the validator enforces but openapi3gen cannot see;
+			// surface them as a regex pattern so the docs describe the constraint.
+			if kind == reflect.String {
+				setPattern(schema, patternForRule(key, val))
+			}
 		}
+	}
+}
+
+// patternForRule maps a go-playground string rule to an OpenAPI (regex) pattern.
+// startswith/endswith/contains escape their literal argument; the character-class
+// rules use a fixed anchored regex. An empty result means "no pattern".
+func patternForRule(key, val string) string {
+	switch key {
+	case "alpha":
+		return "^[a-zA-Z]+$"
+	case "alphanum":
+		return "^[a-zA-Z0-9]+$"
+	case "numeric", "number":
+		return `^[-+]?[0-9]+(?:\.[0-9]+)?$`
+	case "startswith":
+		if val != "" {
+			return "^" + regexp.QuoteMeta(val)
+		}
+	case "endswith":
+		if val != "" {
+			return regexp.QuoteMeta(val) + "$"
+		}
+	case "contains":
+		if val != "" {
+			return regexp.QuoteMeta(val)
+		}
+	}
+	return ""
+}
+
+// setPattern sets a regex pattern on the schema, but only the first time, so a
+// field that combines two pattern-producing rules keeps the first (most specific)
+// one rather than silently overwriting it. An empty pattern is ignored.
+func setPattern(schema *openapi3.Schema, pattern string) {
+	if pattern != "" && schema.Pattern == "" {
+		schema.Pattern = pattern
 	}
 }
 
