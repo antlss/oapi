@@ -1,6 +1,6 @@
 module github.com/antlss/oapi/adapter/chi
 
-go 1.25.5
+go 1.25.0
 
 require (
 	github.com/antlss/oapi v0.0.0
@@ -24,6 +24,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// Dev-only local link to the core module (unpublished). Remove and bump the
-// require above to a tagged version when releasing this module.
 replace github.com/antlss/oapi => ../..

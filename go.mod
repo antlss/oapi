@@ -1,6 +1,6 @@
 module github.com/antlss/oapi
 
-go 1.25.5
+go 1.25.0
 
 require (
 	github.com/getkin/kin-openapi v0.139.0

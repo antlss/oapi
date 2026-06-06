@@ -1,6 +1,6 @@
 module github.com/antlss/oapi/examples
 
-go 1.25.5
+go 1.25.0
 
 // The demo application: it ties the core, every adapter and the default
 // validator together, so it requires them all. The library modules themselves
@@ -71,11 +71,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// Dev-only local links to the unpublished library modules. Remove and bump the
-// requires above to tagged versions when releasing.
-replace (
-	github.com/antlss/oapi => ..
-	github.com/antlss/oapi/adapter/fiber => ../adapter/fiber
-	github.com/antlss/oapi/adapter/gin => ../adapter/gin
-	github.com/antlss/oapi/validation/playground => ../validation/playground
-)
+replace github.com/antlss/oapi => ..
+
+replace github.com/antlss/oapi/adapter/fiber => ../adapter/fiber
+
+replace github.com/antlss/oapi/adapter/gin => ../adapter/gin
+
+replace github.com/antlss/oapi/validation/playground => ../validation/playground
