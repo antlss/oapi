@@ -1,30 +1,35 @@
 # oapi
 
-Turn typed Go handlers into HTTP endpoints whose request and response structs
-are the single source of truth for **binding**, **validation** _and_ **OpenAPI 3
-documentation**.
+Turn typed Go handlers into HTTP endpoints whose request and response structs are
+the single source of truth for **binding**, **validation** and **OpenAPI 3 docs**.
 
-The struct tags you already write to bind and validate a request are the same
-tags the OpenAPI generator reads. The docs are generated from the exact Go types
-the handler binds, so **they can never drift** from the running code.
+The struct tags you already write to bind and validate a request are the same tags
+the OpenAPI generator reads, so the docs are generated from the exact Go types the
+handler binds — they **can never drift** from the running code.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/antlss/oapi.svg)](https://pkg.go.dev/github.com/antlss/oapi)
 [![Go Version](https://img.shields.io/badge/go-1.25-00ADD8?logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> Status: **pre-1.0**. The API is still settling and may change before a tagged
-> `v1`.
+> Status: **pre-1.0** — the API may still change before a tagged `v1`.
+
+<p align="center">
+  <img src="docs/images/swagger.png" alt="Swagger UI for the example Catalog API" width="49%" />
+  <img src="docs/images/redoc.png" alt="Redoc reference for the example Catalog API" width="49%" />
+</p>
+<p align="center"><sub>OpenAPI docs generated straight from the Go types — Swagger UI (left) and Redoc (right). Run it yourself from <a href="examples/"><code>examples/</code></a>.</sub></p>
 
 ## Features
 
-- **Typed handlers** — a handler is `func(ctx, Request[Header, Param, Query, Body]) (*Response, error)`. Each request part is bound from a different source; use `struct{}` for parts you do not consume.
-- **Typed middleware** — `WithTypedBefore` middleware sees the same parsed, typed request as the handler (the request is parsed once and shared).
-- **Five adapters, one route set** — the framework-agnostic core runs unchanged on **net/http**, **gin**, **Fiber v2**, **chi** and **Echo v4**. The same `[]Route` mounts on any of them.
-- **OpenAPI 3 generation** — a `Registry` turns your routes into a validated OpenAPI 3 document (`JSON`/`YAML`/`Write`), reading the same struct tags used for binding and validation.
-- **Pluggable seams** — the **validator**, the **response envelope**, and the **error parser** are all swappable interfaces. The core ships none of them by default and depends on no validation library.
-- **File upload & download** — multipart bodies (`[]*multipart.FileHeader`) bind like any other field; binary downloads stream via `NewResult(bytes).WithFile(...)`.
-- **Paging & envelopes** — the default `{"data": ...}` / `{"data": ..., "meta": ...}` envelope with paging meta, plus per-route custom envelopes and raw (un-enveloped) responses.
-- **Decoupled error model** — `HTTPError`, per-route `ErrorMapper`, and a process-wide `ErrorParser` seam. Unrecognised errors never leak: they render a generic 500 and are recorded for server-side logging.
+- **Typed handlers** — `func(ctx, Request[Header, Param, Query, Body]) (*Response, error)`; each part binds from a different source, `struct{}` for the parts you don't use.
+- **Typed middleware** — `WithTypedBefore` sees the same parsed request as the handler (parsed once, shared).
+- **Five adapters, one route set** — the same `[]Route` runs unchanged on **net/http**, **gin**, **Fiber v2**, **chi** and **Echo v4**.
+- **OpenAPI 3 generation** — a `Registry` turns the routes into a validated spec (`JSON`/`YAML`/`Write`) from the same struct tags used for binding.
+- **Pluggable seams** — the validator, response envelope and error parser are swappable interfaces; the core ships none and depends on no validation library.
+- **Scoped config** — bundle validator/envelope/error-parser/body-cap into an immutable `App` and attach it per route with `WithApp`, instead of process-wide globals.
+- **Files** — multipart uploads (`[]*multipart.FileHeader`) bind like any field; downloads stream via `NewResult(bytes).WithFile(...)`.
+- **Envelopes & paging** — default `{"data": ...}` (+ `meta`), with per-route custom or raw responses.
+- **Safe errors** — `HTTPError`, per-route `ErrorMapper`, process-wide `ErrorParser`; unrecognised errors render a generic 500 and never leak internals.
 
 ## Install
 
@@ -32,9 +37,8 @@ the handler binds, so **they can never drift** from the running code.
 go get github.com/antlss/oapi
 ```
 
-The net/http adapter ships with the core (no extra dependencies). The gin,
-Fiber, chi and Echo adapters live in their own modules, so you pull in only what
-you import:
+The net/http adapter ships with the core. Each other adapter is its own module, so
+you pull in only what you import:
 
 ```sh
 go get github.com/antlss/oapi/adapter/gin
@@ -43,15 +47,14 @@ go get github.com/antlss/oapi/adapter/chi
 go get github.com/antlss/oapi/adapter/echo
 ```
 
-Validation is opt-in via the [`Validator`](#validation-seam) seam — the core
-ships none and depends on no validation library. A go-playground/validator-backed
-reference implementation lives in `examples/validation`; copy it into your project
-or implement the small interface yourself.
+Validation is opt-in (the core ships no validator). Copy the go-playground/validator
+reference in `examples/validation`, or implement the small [`Validator`](#validation)
+interface yourself.
 
 ## Quickstart
 
-A complete net/http service: one typed route, validation turned on, and the
-OpenAPI document served at `/openapi.json`.
+A complete net/http service: one typed route, plus the OpenAPI document at
+`/openapi.json`.
 
 ```go
 package main
@@ -65,14 +68,12 @@ import (
 	nethttp "github.com/antlss/oapi/adapter/nethttp"
 )
 
-// The request struct is the single source of truth: the `header`/`uri`/`form`/
-// `json` tags drive binding, the `binding` tags drive both runtime validation
-// and the generated OpenAPI schema (required/enum/bounds), and `example` drives
-// the sample values shown in the docs.
+// One struct drives everything: `json` binds the body, `binding` validates it AND
+// becomes the OpenAPI schema (required/enum/bounds), `example` sets the docs samples.
 type CreateProductBody struct {
-	Name     string  `json:"name"     binding:"required,min=2,max=120"        example:"Mechanical Keyboard"`
-	Price    float64 `json:"price"    binding:"required,gt=0"                 example:"49.90"`
-	Currency string  `json:"currency" binding:"required,oneof=USD EUR JPY"    example:"USD"`
+	Name     string  `json:"name"     binding:"required,min=2,max=120"     example:"Mechanical Keyboard"`
+	Price    float64 `json:"price"    binding:"required,gt=0"              example:"49.90"`
+	Currency string  `json:"currency" binding:"required,oneof=USD EUR JPY" example:"USD"`
 }
 
 type Product struct {
@@ -82,37 +83,23 @@ type Product struct {
 	Currency string  `json:"currency" example:"USD"`
 }
 
-// CreateProduct is a typed RequestHandler. Header/Param/Query are unused here,
-// so they are struct{}. Returning a *Product lets NewRoute wrap it in the
-// default {"data": ...} envelope automatically.
+// Header/Param/Query are unused, so struct{}. Returning *Product wraps it in the
+// default {"data": ...} envelope; Response is inferred from the return type.
 var CreateProduct = oapi.NewRoute(
 	http.MethodPost, "/products",
 	func(_ context.Context, req oapi.Request[struct{}, struct{}, struct{}, CreateProductBody]) (*Product, error) {
-		return &Product{
-			ID:       1001,
-			Name:     req.Body.Name,
-			Price:    req.Body.Price,
-			Currency: req.Body.Currency,
-		}, nil
+		return &Product{ID: 1001, Name: req.Body.Name, Price: req.Body.Price, Currency: req.Body.Currency}, nil
 	},
 	oapi.WithSummary("Create a product"),
 	oapi.WithTags("catalog"),
 	oapi.WithSuccessStatus(http.StatusCreated),
-	oapi.WithResponseType[Product](),
 )
 
 func main() {
-	// Validation is opt-in: install a Validator so the `binding` rules are
-	// enforced (the core ships none). A go-playground-backed reference lives in
-	// examples/validation — copy it in, then oapi.SetValidator(validation.New()).
-	// Without one, the library logs a one-time warning and skips the rules.
-
 	mux := http.NewServeMux()
-
-	// Mount the typed route(s) on the standard-library mux.
 	nethttp.RegisterAll(mux, CreateProduct)
 
-	// Build the OpenAPI document from the SAME routes and serve it.
+	// Build the spec from the SAME routes and serve it.
 	reg := oapi.NewRegistry("Catalog API", "v1").
 		Describe("A tiny example API.").
 		AddServer("http://localhost:8080", "Local").
@@ -120,39 +107,38 @@ func main() {
 	mux.HandleFunc("GET /openapi.json", nethttp.SpecHandler(reg))
 
 	log.Println("listening on :8080  (spec at /openapi.json)")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
-		log.Fatal(err)
-	}
+	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 ```
 
-`POST /products` now binds `CreateProductBody` (and validates it once you install
-a `Validator`), returns `201 Created` with `{"data": {...}}`, and
-`GET /openapi.json` serves an OpenAPI 3 document whose `CreateProductBody`/
-`Product` schemas — required fields, the `oneof` enum, the bounds — are generated
-from the exact same struct.
+`POST /products` binds the body, returns `201` with `{"data": {...}}`, and
+`/openapi.json` serves a spec whose schema — required fields, the `oneof` enum, the
+bounds — comes from the same struct.
+
+> Validation is opt-in: install a validator once at startup —
+> `oapi.SetValidator(validation.New())` — or the `binding` rules are skipped (with a
+> one-time warning).
 
 ## Adapters
 
-The core is framework-agnostic: a `Registry` produces bytes and an
-`*openapi3.T`, and routes are mounted by a thin adapter. Each adapter exposes the
-same surface: `Register`, `RegisterAll` and `SpecHandler`.
+The core is framework-agnostic. Every adapter exposes the same surface — `Register`,
+`RegisterAll`, `SpecHandler` — so switching frameworks is just a different
+`RegisterAll` call over the same routes.
 
-| Framework   | Import path                              | Notes                                  |
-| ----------- | ---------------------------------------- | -------------------------------------- |
-| net/http    | `github.com/antlss/oapi/adapter/nethttp` | Ships with the core, no extra deps. Go 1.22+ method-aware `ServeMux`. |
-| gin         | `github.com/antlss/oapi/adapter/gin`     | Separate module.                       |
-| Fiber v2    | `github.com/antlss/oapi/adapter/fiber`   | Separate module.                       |
-| chi         | `github.com/antlss/oapi/adapter/chi`     | Separate module (go-chi/chi v5).       |
-| Echo v4     | `github.com/antlss/oapi/adapter/echo`    | Separate module.                       |
+| Framework | Adapter package (under `github.com/antlss/oapi`) | Notes |
+| --------- | ------------------------------------------------ | ----- |
+| net/http  | `adapter/nethttp` | Ships with the core, no extra deps (Go 1.22+ method-aware `ServeMux`). |
+| gin       | `adapter/gin`     | Separate module. |
+| Fiber v2  | `adapter/fiber`   | Separate module. |
+| chi       | `adapter/chi`     | Separate module (go-chi/chi v5). |
+| Echo v4   | `adapter/echo`    | Separate module. |
 
-Switching frameworks is just a different `RegisterAll` call over the same
-`api.Routes()`.
+Each adapter caps the request body at `DefaultMaxRequestBytes` (10 MiB; set `0` to
+disable), overridable per route via an `App`'s `WithMaxRequestBytes`.
 
-## Documentation generation
+## OpenAPI generation
 
-A `Registry` is the OpenAPI side of the library. Add routes and document-level
-metadata, then render or write the spec:
+A `Registry` collects routes and document metadata, then renders the spec:
 
 ```go
 reg := oapi.NewRegistry("Catalog API", "v1").
@@ -164,24 +150,23 @@ reg := oapi.NewRegistry("Catalog API", "v1").
 	AddTag("catalog", "Browse and manage products").
 	Add(routes...)
 
-jsonBytes, err := reg.JSON() // indented JSON
-yamlBytes, err := reg.YAML() // block-style YAML
-err = reg.Validate(ctx)      // check against the OpenAPI 3 schema
+data, err := reg.JSON() // or reg.YAML()
+err = reg.Validate(ctx) // check against the OpenAPI 3 schema
 ```
 
-To write the spec to disk, use `Registry.Write`:
+Also available: `TermsOfService`, `ExternalDocs`, `Logo`/`LogoWith`, `TagGroup`, and
+`UseComponents()` (emit shared types as `$ref` under `components/schemas` instead of
+inlining). A `Base` document supplies defaults the generated paths overlay (`Base` /
+`LoadBaseFile`).
+
+Write to disk, or generate from the command line:
 
 ```go
-paths, err := reg.Write(ctx, oapi.GenConfig{Dir: "openapi"})
-// writes openapi/openapi.json and openapi/openapi.yaml (validated first)
+reg.Write(ctx, oapi.GenConfig{Dir: "openapi"}) // openapi.json + openapi.yaml (validated first)
 ```
-
-For a turnkey `go:generate` command, `tools/gen_doc` wraps `Write` in a `Main`
-that parses flags (`-out`, `-format`, `-base`, `-no-validate`):
 
 ```go
 //go:generate go run ./cmd/openapi-gen -out ./openapi
-
 package main
 
 import (
@@ -189,72 +174,80 @@ import (
 	"example.com/app/api"
 )
 
-func main() { gendoc.Main(api.Registry()) }
+func main() { gendoc.Main(api.Registry()) } // flags: -out -format -base -no-validate
 ```
-
-A `Base` document can supply defaults (info, vendor extensions like
-`x-tagGroups`, ...) that the generated paths and the `Registry`'s own setters
-overlay — see `Registry.Base` / `LoadBaseFile`.
 
 ## Concepts
 
 ### Request parts
 
-A handler's request is `Request[Header, Param, Query, Body]`; each part binds
-from a different source, and `struct{}` means "this endpoint does not use it":
+`Request[Header, Param, Query, Body]` — each part binds from a different source;
+`struct{}` means "this endpoint doesn't use it":
 
-| Part     | Source            | Tag        |
-| -------- | ----------------- | ---------- |
-| `Header` | request headers   | `header:"..."` |
-| `Param`  | path parameters   | `uri:"..."`    |
-| `Query`  | query string      | `form:"..."`   |
-| `Body`   | JSON body         | `json:"..."`   |
-| `Body`   | urlencoded / multipart body | `form:"..."` (plus `[]*multipart.FileHeader` for files) |
+| Part     | Source                 | Tag |
+| -------- | ---------------------- | --- |
+| `Header` | request headers        | `header:"..."` |
+| `Param`  | path parameters        | `uri:"..."` |
+| `Query`  | query string           | `form:"..."` |
+| `Body`   | JSON body              | `json:"..."` |
+| `Body`   | urlencoded / multipart | `form:"..."` (+ `[]*multipart.FileHeader` for files) |
 
-The `binding` tag carries the validation rules; the same rules become OpenAPI
-constraints (`required`, `oneof` → enum, `min`/`max`/`gt` → bounds, `uuid`/
-`email`/`url` → formats). `example` tags set the sample values shown in the docs.
+The `binding` tag carries validation rules that also become OpenAPI constraints
+(`required`; `oneof`→enum; `min`/`max`/`gt`→bounds; `uuid`/`email`/`url`→formats).
+`example` tags set the docs samples.
+
+### Constructors
+
+- `NewRoute` — handler returns `*Response`, wrapped by the envelope; `nil` → `204 No Content`.
+- `NewRichRoute` — handler returns a fully built `*Result` (paging, headers, status, file download). Add `WithResponseType[T]()` or `WithBinaryResponse(...)` so the docs match what it returns.
+- `NewBodyRoute` / `NewQueryRoute` / `NewParamRoute` — shortcuts for single-part endpoints, so you skip the `struct{}` placeholders.
 
 ### Result & envelope
 
-- `NewRoute(...)` takes a typed `RequestHandler` that returns `*Response`; the value is wrapped by the route's envelope (default `{"data": ...}`). Returning `nil` yields `204 No Content`.
-- `NewRichRoute(...)` takes a `RichHandler` that returns a fully built `*Result` for paging, custom headers/status, file downloads, etc. Use `WithResponseType[T]()` to keep the docs accurate.
-- The envelope is a `ResponseEnvelope` seam. Defaults to `DataEnvelope`; override per route with `WithEnvelope(oapi.KeyedEnvelope{...})` or `WithRawResponse()` (no wrapper), or process-wide with `SetResponseEnvelope`. The same definition drives both the wire body and the documented schema, so they cannot diverge.
-- Result builders: `NewDataResult`, `NewListDataResult` (paging meta), `NewResult` (raw), with `.WithStatus`, `.WithHeader`, `.WithMeta`, `.WithFile`.
+- Build a `*Result` with `NewDataResult` (enveloped), `NewListDataResult` (+ paging meta) or `NewResult` (raw); chain `.WithStatus`, `.WithHeader`, `.WithMeta`, `.WithPaging`, `.WithFile`.
+- The envelope is a `ResponseEnvelope` seam (default `DataEnvelope` → `{"data": ...}`). Override per route with `WithEnvelope(KeyedEnvelope{...})` / `WithRawResponse()`, per `App` with `WithResponseEnvelope`, or globally with `SetResponseEnvelope`. One definition drives both the wire body and its documented schema.
 
-### Error model
+### Errors
 
-- `HTTPError` — any error implementing `HTTPStatus() int` controls its own status; optionally implement `ErrorBody` for a custom JSON body. Build one with `oapi.NewError(status, code, message)` or the standard field-level 400 with `oapi.NewValidationError(message, fields)`.
-- `ErrorMapper` — a per-route mapper (`WithErrorMapper`) translating domain errors into a full wire body.
-- `ErrorParser` — a process-wide, all-in-one error seam (`SetErrorParser`) that maps errors to a status, produces the wire body, **and** describes that body's schema for the docs.
-- Resolution order: per-route mapper → global `ErrorParser` → built-in `HTTPError` → aerror-shaped duck typing → generic 500. Unrecognised errors are never leaked to the client; they are recorded on the carrier for logging middleware.
+- `HTTPError` — any error with `HTTPStatus() int` controls its own status (and, via `ErrorBody`, its JSON). Build one with `oapi.NewError(...)`, or the standard field-level 400 with `oapi.NewValidationError(...)`.
+- `ErrorMapper` (per-route, `WithErrorMapper`) and `ErrorParser` (global, `SetErrorParser`) own the full wire body; `ErrorParser` also documents it.
+- Resolution order: per-route mapper → `ErrorParser` → `HTTPError` → aerror-shaped duck typing → generic 500. Unrecognised errors never leak; they're recorded on the carrier for logging middleware.
 
-### Validation seam
+### Validation
 
-Validation is a pluggable `Validator` interface installed once at startup with
-`SetValidator`. The core depends on no validation library and ships no validator.
-`SetValidator(nil)` disables validation explicitly (also silences the startup
-warning). The `RuleTag` variable (default `"binding"`) selects which struct tag
-both the validator and the schema generator read.
+A pluggable `Validator` installed once with `SetValidator` (or per `App` with
+`WithValidator`). `SetValidator(nil)` disables it explicitly. `RuleTag` (default
+`"binding"`) names the tag both the validator and the generator read. A
+go-playground/validator reference lives in `examples/validation`.
 
-A go-playground/validator-backed reference implementation lives in
-`examples/validation`; copy it into your project or wire the small `Validator`
-interface yourself, then `oapi.SetValidator(validation.New())`.
+### Scoped config (App)
+
+Instead of process-wide globals, bundle config into an immutable `App` and attach it
+per route — two differently configured groups can then serve in one process:
+
+```go
+app := oapi.New(
+	oapi.WithValidator(validation.New()),
+	oapi.WithResponseEnvelope(oapi.KeyedEnvelope{DataKey: "data", Constants: map[string]any{"success": true}}),
+	oapi.WithErrorParser(api.AppErrorParser{}),
+	oapi.WithMaxRequestBytes(5 << 20),
+)
+r := oapi.NewRoute(method, path, handler, oapi.WithApp(app))
+```
+
+`New` snapshots the current globals and is immutable after. The App scopes both the
+wire bytes and the generated docs, so `/v1` and `/v2` can each have their own
+envelope and error shape with no global state. (`RuleTag` stays process-wide.)
 
 ## Examples
 
-The `examples/` tree is a runnable "Catalog API" exercising every capability —
-typed binding of every request part, JSON/urlencoded/multipart bodies, file
-upload/download, paging, security schemes, typed middleware, the full error
-model, custom envelopes, and a fully populated `Registry`. The same route set is
-mounted on net/http, gin, and Fiber by `examples/cmd/{nethttp,gin,fiber}`.
-
-Two commands demonstrate configuration. `examples/cmd/customized` installs a custom
-response envelope and error shape **process-wide** via `oapi.Set*`. `examples/cmd/scoped`
-does the same per `oapi.App` instead: it serves two differently configured groups
-(`/v1` and `/v2`, distinct envelope + error shape) in one process with **no** global
-`Set*` call, scoping both the wire bytes and the generated docs.
+`examples/` is a runnable "Catalog API" exercising every capability — all request
+parts, JSON/urlencoded/multipart bodies, file upload/download, paging, security,
+typed middleware, the full error model and custom envelopes. The same routes mount
+on net/http, gin and Fiber under `examples/cmd/{nethttp,gin,fiber}`.
+`examples/cmd/customized` configures the response/error shapes process-wide via
+`Set*`; `examples/cmd/scoped` does it per `App` (two groups, no globals).
 
 ## License
 
-[MIT](LICENSE) © 2026 antlss
+[MIT](LICENSE) © 2026 Tran Long An
