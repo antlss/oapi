@@ -53,23 +53,29 @@ interface yourself.
 
 ## Quickstart
 
-A complete net/http service: one typed route, plus the OpenAPI document at
-`/openapi.json`.
+Let's build a complete, runnable API with OpenAPI generation in 5 simple steps.
+
+**Step 1: Initialize your project**
+```bash
+mkdir oapi-quickstart && cd oapi-quickstart
+go mod init oapi-quickstart
+go get github.com/antlss/oapi
+```
+
+**Step 2: Define your API and Routes (`api/api.go`)**
+Create a new directory `api` and add `api.go`. This holds your endpoints and OpenAPI registry.
 
 ```go
-package main
+package api
 
 import (
 	"context"
-	"log"
 	"net/http"
 
 	"github.com/antlss/oapi"
-	nethttp "github.com/antlss/oapi/adapter/nethttp"
 )
 
-// One struct drives everything: `json` binds the body, `binding` validates it AND
-// becomes the OpenAPI schema (required/enum/bounds), `example` sets the docs samples.
+// 1. Define your types with binding/validation tags
 type CreateProductBody struct {
 	Name     string  `json:"name"     binding:"required,min=2,max=120"     example:"Mechanical Keyboard"`
 	Price    float64 `json:"price"    binding:"required,gt=0"              example:"49.90"`
@@ -83,8 +89,8 @@ type Product struct {
 	Currency string  `json:"currency" example:"USD"`
 }
 
-// Header/Param/Query are unused, so struct{}. Returning *Product wraps it in the
-// default {"data": ...} envelope; Response is inferred from the return type.
+// 2. Create the Route
+// Header/Param/Query are unused, so struct{}. Returning *Product wraps it in the default {"data": ...} envelope.
 var CreateProduct = oapi.NewRoute(
 	http.MethodPost, "/products",
 	func(_ context.Context, req oapi.Request[struct{}, struct{}, struct{}, CreateProductBody]) (*Product, error) {
@@ -95,20 +101,80 @@ var CreateProduct = oapi.NewRoute(
 	oapi.WithSuccessStatus(http.StatusCreated),
 )
 
-func main() {
-	mux := http.NewServeMux()
-	nethttp.RegisterAll(mux, CreateProduct)
-
-	// Build the spec from the SAME routes and serve it.
-	reg := oapi.NewRegistry("Catalog API", "v1").
+// 3. Export the Registry (used for both serving and generating docs)
+func BuildRegistry() *oapi.Registry {
+	return oapi.NewRegistry("Catalog API", "v1").
 		Describe("A tiny example API.").
 		AddServer("http://localhost:8080", "Local").
 		Add(CreateProduct)
-	mux.HandleFunc("GET /openapi.json", nethttp.SpecHandler(reg))
+}
+```
 
-	log.Println("listening on :8080  (spec at /openapi.json)")
+**Step 3: Create the Generator CLI (`cmd/gen/main.go`)**
+Create `cmd/gen/main.go`. This tiny script writes your OpenAPI spec to disk.
+
+```go
+package main
+
+import (
+	"oapi-quickstart/api"
+	
+	gendoc "github.com/antlss/oapi/tools/gen_doc"
+)
+
+// gendoc.Main parses flags (-out, -format, etc) and writes the files.
+func main() {
+	gendoc.Main(api.BuildRegistry())
+}
+```
+
+**Step 4: Create the Server (`main.go`)**
+Create `main.go` in the root of your project. Notice the `//go:generate` directive at the top!
+
+```go
+//go:generate go run ./cmd/gen -out ./openapi
+package main
+
+import (
+	"log"
+	"net/http"
+
+	"oapi-quickstart/api"
+
+	"github.com/antlss/oapi/adapter/nethttp"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	
+	// Register the routes
+	nethttp.RegisterAll(mux, api.CreateProduct)
+
+	// Serve the raw spec at /openapi.json
+	mux.HandleFunc("GET /openapi.json", nethttp.SpecHandler(api.BuildRegistry()))
+
+	log.Println("Listening on :8080 (Spec at /openapi.json)")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
+```
+
+**Step 5: Generate & Run!**
+
+Now you can generate your OpenAPI docs and run the server:
+
+```bash
+# 1. Generate OpenAPI specs to disk (creates ./openapi/openapi.json and .yaml)
+go generate ./...
+
+# 2. Run the server
+go run main.go
+```
+
+Test it with `curl`:
+```bash
+curl -X POST http://localhost:8080/products \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Mechanical Keyboard", "price": 49.90, "currency": "USD"}'
 ```
 
 `POST /products` binds the body, returns `201` with `{"data": {...}}`, and
@@ -172,13 +238,13 @@ The core is framework-agnostic. Every adapter exposes the same surface — `Regi
 `RegisterAll`, `SpecHandler` — so switching frameworks is just a different
 `RegisterAll` call over the same routes.
 
-| Framework | Adapter package (under `github.com/antlss/oapi`) | Notes |
-| --------- | ------------------------------------------------ | ----- |
-| net/http  | `adapter/nethttp` | Ships with the core, no extra deps (Go 1.22+ method-aware `ServeMux`). |
-| gin       | `adapter/gin`     | Separate module. |
-| Fiber v2  | `adapter/fiber`   | Separate module. |
-| chi       | `adapter/chi`     | Separate module (go-chi/chi v5). |
-| Echo v4   | `adapter/echo`    | Separate module. |
+| Framework | Adapter package (under `github.com/antlss/oapi`) | Notes                                                                  |
+| --------- | ------------------------------------------------ | ---------------------------------------------------------------------- |
+| net/http  | `adapter/nethttp`                                | Ships with the core, no extra deps (Go 1.22+ method-aware `ServeMux`). |
+| gin       | `adapter/gin`                                    | Separate module.                                                       |
+| Fiber v2  | `adapter/fiber`                                  | Separate module.                                                       |
+| chi       | `adapter/chi`                                    | Separate module (go-chi/chi v5).                                       |
+| Echo v4   | `adapter/echo`                                   | Separate module.                                                       |
 
 Each adapter caps the request body at `DefaultMaxRequestBytes` (10 MiB; set `0` to
 disable), overridable per route via an `App`'s `WithMaxRequestBytes`.
@@ -252,12 +318,12 @@ diff tells you a doc went stale.
 `Request[Header, Param, Query, Body]` — each part binds from a different source;
 `struct{}` means "this endpoint doesn't use it":
 
-| Part     | Source                 | Tag |
-| -------- | ---------------------- | --- |
-| `Header` | request headers        | `header:"..."` |
-| `Param`  | path parameters        | `uri:"..."` |
-| `Query`  | query string           | `form:"..."` |
-| `Body`   | JSON body              | `json:"..."` |
+| Part     | Source                 | Tag                                                  |
+| -------- | ---------------------- | ---------------------------------------------------- |
+| `Header` | request headers        | `header:"..."`                                       |
+| `Param`  | path parameters        | `uri:"..."`                                          |
+| `Query`  | query string           | `form:"..."`                                         |
+| `Body`   | JSON body              | `json:"..."`                                         |
 | `Body`   | urlencoded / multipart | `form:"..."` (+ `[]*multipart.FileHeader` for files) |
 
 The `binding` tag carries validation rules that also become OpenAPI constraints
@@ -294,11 +360,11 @@ oapi.SetValidator(validation.New())
 - **The seam.** Any type implementing `Validator` (`Validate(value any, source string) error`)
   works. Install it process-wide with `SetValidator`, or scope it to a route group with
   an `App`'s `WithValidator`. `SetValidator(nil)` disables it explicitly.
-- **If you skip it.** With no validator installed, the `binding` rules are *not*
+- **If you skip it.** With no validator installed, the `binding` rules are _not_
   enforced — requests bind and pass through, and the library logs a one-time warning.
   Schema generation is unaffected: the docs still show the constraints either way.
 - **One tag, two jobs.** `RuleTag` (default `"binding"`) names the tag the validator
-  reads *and* the generator turns into OpenAPI constraints, so a rule like
+  reads _and_ the generator turns into OpenAPI constraints, so a rule like
   `binding:"required,oneof=USD EUR"` can never validate one thing and document another.
 - **Reference implementation.** `examples/validation` is a ready go-playground/validator
   adapter (`validation.New()`): one engine per request part, field errors reported by
