@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"sync"
+	"sync/atomic"
 )
 
 // HTTPError is the contract an error can satisfy to control the HTTP response it
@@ -42,6 +43,13 @@ type Error struct {
 	Code    string       `json:"code,omitempty"`
 	Message string       `json:"message"`
 	Fields  []FieldError `json:"fields,omitempty"`
+
+	// cause carries the underlying failure (e.g. the raw form/JSON decoder error)
+	// for server-side diagnostics. It is unexported, so it is NEVER serialized into
+	// the client body — the client sees only the sanitized Code/Message/Fields —
+	// but logging middleware reading the recorded error can recover it via
+	// errors.Unwrap / errors.As. See [Error.Unwrap].
+	cause error
 }
 
 // NewError builds an Error with the given status, code and message.
@@ -59,6 +67,18 @@ func NewValidationError(message string, fields []FieldError) *Error {
 
 func (e *Error) Error() string   { return e.Message }
 func (e *Error) HTTPStatus() int { return e.Status }
+
+// Unwrap exposes the underlying cause (if any) so errors.Is/As and logging
+// middleware can inspect the original decoder/validation failure. The cause is
+// never placed in the client-facing body.
+func (e *Error) Unwrap() error { return e.cause }
+
+// withCause attaches an underlying error for server-side diagnostics, returning e
+// for chaining. The cause is unexported and so stays out of the rendered body.
+func (e *Error) withCause(err error) *Error {
+	e.cause = err
+	return e
+}
 
 // ErrorBody renders the error itself (code/message/fields) as the envelope body.
 func (e *Error) ErrorBody() any { return e }
@@ -93,24 +113,38 @@ type ErrorParser interface {
 	ErrorType() reflect.Type
 }
 
-// errorParser is configured once at startup and read on every error render and
-// during doc generation. Not lock-guarded — install before serving, like the rest
-// of the library's process-wide configuration.
+// errorParserHolder boxes the process-wide parser so it can live in an
+// atomic.Pointer (an interface value is two words that cannot be swapped
+// atomically on its own).
+type errorParserHolder struct{ parser ErrorParser }
+
+// errorParserBox holds the process-wide [ErrorParser], read on every error render
+// and during doc generation. It is held in an atomic.Pointer so the render path
+// reads it lock-free while [SetErrorParser] swaps it; a nil box means none is set.
 var (
-	errorParser        ErrorParser //nolint:gochecknoglobals
-	errorParserWarning sync.Once   //nolint:gochecknoglobals
+	errorParserBox     atomic.Pointer[errorParserHolder] //nolint:gochecknoglobals
+	errorParserWarning sync.Once                         //nolint:gochecknoglobals
 )
 
 // SetErrorParser installs the process-wide [ErrorParser]. Call it once during
 // startup, before serving requests. Passing nil clears it (errors fall back to the
-// built-in handling). It is not safe to call concurrently with in-flight requests.
+// built-in handling). The swap is atomic, so calling it while requests are in
+// flight is safe.
 //
 // A parser whose ErrorType is nil cannot describe its body for the docs; since an
 // all-in-one parser almost always renders a custom shape, this logs a one-time
 // warning to catch the drift early.
 func SetErrorParser(p ErrorParser) {
-	errorParser = p
+	errorParserBox.Store(&errorParserHolder{parser: p})
 	warnIfParserUndocumented(p)
+}
+
+// loadErrorParser returns the process-wide parser, or nil when none is installed.
+func loadErrorParser() ErrorParser {
+	if h := errorParserBox.Load(); h != nil {
+		return h.parser
+	}
+	return nil
 }
 
 // warnIfParserUndocumented logs a one-time warning when a non-nil parser cannot

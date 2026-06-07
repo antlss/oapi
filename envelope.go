@@ -2,6 +2,7 @@ package oapi
 
 import (
 	"reflect"
+	"sync/atomic"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -116,21 +117,36 @@ func constSchema(v any) *openapi3.Schema {
 	return s
 }
 
-// responseEnvelope is the process-wide default, read on every success render and
-// during doc generation. Like the validator seam it is not lock-guarded: install
-// it before serving (the documented contract).
-var responseEnvelope ResponseEnvelope = DataEnvelope //nolint:gochecknoglobals
+// envelopeHolder boxes the process-wide default envelope so it can live in an
+// atomic.Pointer (atomic.Pointer needs a concrete pointee, and an interface value
+// is two words that cannot be swapped atomically on its own).
+type envelopeHolder struct{ env ResponseEnvelope }
+
+// responseEnvelopeBox is the process-wide default, read on every success render
+// and during doc generation. It is held in an atomic.Pointer so the success path
+// reads it lock-free while [SetResponseEnvelope] swaps it; a nil box (never set)
+// resolves to [DataEnvelope], the original default.
+var responseEnvelopeBox atomic.Pointer[envelopeHolder] //nolint:gochecknoglobals
 
 // SetResponseEnvelope installs the process-wide [ResponseEnvelope] used to shape
 // every success response that does not override it per route. Call it once during
 // startup, before serving. Passing nil restores the default [DataEnvelope].
 //
-// It is not safe to call concurrently with in-flight requests.
+// The swap is atomic, so calling it while requests are in flight is safe.
 func SetResponseEnvelope(e ResponseEnvelope) {
 	if e == nil {
 		e = DataEnvelope
 	}
-	responseEnvelope = e
+	responseEnvelopeBox.Store(&envelopeHolder{env: e})
+}
+
+// loadResponseEnvelope returns the process-wide default envelope, or [DataEnvelope]
+// when none was installed.
+func loadResponseEnvelope() ResponseEnvelope {
+	if h := responseEnvelopeBox.Load(); h != nil && h.env != nil {
+		return h.env
+	}
+	return DataEnvelope
 }
 
 // resolveEnvelope picks the effective envelope: an explicit per-route/per-result
@@ -139,8 +155,5 @@ func resolveEnvelope(e ResponseEnvelope) ResponseEnvelope {
 	if e != nil {
 		return e
 	}
-	if responseEnvelope != nil {
-		return responseEnvelope
-	}
-	return DataEnvelope
+	return loadResponseEnvelope()
 }

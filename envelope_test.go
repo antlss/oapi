@@ -192,7 +192,7 @@ func TestErrorParserOwnsBodyAndDocs(t *testing.T) {
 
 	// Runtime: the parser owns the FULL body (no {"error": ...} wrapper). Pass the
 	// global parser explicitly, the way a route without an App resolves it.
-	status, body, wrap := resolveError(context.DeadlineExceeded, nil, errorParser)
+	status, body, wrap := resolveError(context.DeadlineExceeded, nil, loadErrorParser())
 	if status != http.StatusTeapot || wrap {
 		t.Fatalf("resolveError = (%d, wrap=%v), want (418, wrap=false)", status, wrap)
 	}

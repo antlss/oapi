@@ -47,11 +47,12 @@ type Option func(*appConfig)
 // then applies opts, so an App is fully self-contained: later global Set* calls do
 // not change an App that already exists. Call it once at startup, before serving.
 func New(opts ...Option) *App {
+	v, configured := loadValidator()
 	cfg := &appConfig{
-		validator:    validatorImpl,
-		validatorSet: validatorConfigured,
-		envelope:     responseEnvelope,
-		errorParser:  errorParser,
+		validator:    v,
+		validatorSet: configured,
+		envelope:     loadResponseEnvelope(),
+		errorParser:  loadErrorParser(),
 		maxBodyBytes: 0,
 		hasMaxBody:   false,
 	}
@@ -132,7 +133,7 @@ func WithApp(a *App) RouteOption {
 // or the process-wide globals when the config is nil (a route built without an App).
 func (c *appConfig) validatorOrGlobal() (Validator, bool) {
 	if c == nil {
-		return validatorImpl, validatorConfigured
+		return loadValidator()
 	}
 	return c.validator, c.validatorSet
 }
@@ -143,7 +144,7 @@ func (c *appConfig) validatorOrGlobal() (Validator, bool) {
 // scopes validation and the response envelope.
 func (c *appConfig) errorParserOrGlobal() ErrorParser {
 	if c == nil {
-		return errorParser
+		return loadErrorParser()
 	}
 	return c.errorParser
 }

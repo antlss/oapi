@@ -58,24 +58,47 @@ func parseRequest[Header, Param, Query, Body any](cfg *appConfig, c Carrier) (Re
 // bindBody chooses the body binder from the content type, falling back to the
 // struct shape when the content type is absent or unrecognised.
 func bindBody[Body any](cfg *appConfig, c Carrier, body *Body, binders *kit) error {
-	t := reflect.TypeFor[Body]()
+	shape := bodyShapeOf(reflect.TypeFor[Body]())
 
 	switch ct := c.ContentType(); {
-	case ct == mimeMultipart || (ct == "" && hasFileField(t)):
+	case ct == mimeMultipart || (ct == "" && shape.hasFile):
 		return bindMultipart(cfg, c, body, binders)
 	case ct == mimeURLEncoded:
 		return bindURLEncoded(cfg, c, body, binders)
 	case ct == mimeJSON:
 		return bindJSON(cfg, c, body)
 	default:
-		if isFormBody(t) {
-			if hasFileField(t) {
+		if shape.isForm {
+			if shape.hasFile {
 				return bindMultipart(cfg, c, body, binders)
 			}
 			return bindURLEncoded(cfg, c, body, binders)
 		}
 		return bindJSON(cfg, c, body)
 	}
+}
+
+// bodyShape caches, per body type, the two reflection predicates the body binder
+// needs on every request: whether the body is a form (urlencoded/multipart) body
+// and whether it carries a file field. Both are pure functions of the type, so
+// caching them keeps the request path from re-walking the struct each time.
+type bodyShape struct {
+	isForm  bool
+	hasFile bool
+}
+
+// bodyShapeCache maps reflect.Type -> bodyShape. reflect.Type is comparable and
+// stable, so it is a safe sync.Map key; entries are bounded by the number of
+// distinct body types in the program (one per route shape).
+var bodyShapeCache sync.Map //nolint:gochecknoglobals
+
+func bodyShapeOf(t reflect.Type) bodyShape {
+	if v, ok := bodyShapeCache.Load(t); ok {
+		return v.(bodyShape)
+	}
+	s := bodyShape{isForm: isFormBody(t), hasFile: hasFileField(t)}
+	bodyShapeCache.Store(t, s)
+	return s
 }
 
 func bindJSON[Body any](cfg *appConfig, c Carrier, body *Body) error {
@@ -115,21 +138,49 @@ func bindMultipart[Body any](cfg *appConfig, c Carrier, body *Body, binders *kit
 	return runValidation(cfg, body, tagForm)
 }
 
-// collectValues walks the struct (recursing into embedded structs, exactly like
-// the OpenAPI generator) and builds a url.Values from a per-name getter, so the
-// shared form decoder can map it onto the struct.
+// collectValues builds a url.Values from a per-name getter for every bindable
+// field of t under tagKey, so the shared form decoder can map it onto the struct.
+// The set of field names is computed once per (type, tag) and cached by
+// boundFieldNames, so header/path binding does not re-walk the struct each request.
 func collectValues(t reflect.Type, get func(name string) []string, tagKey string) url.Values {
 	values := url.Values{}
+	for _, name := range boundFieldNames(t, tagKey) {
+		if vs := get(name); len(vs) > 0 {
+			values[name] = vs
+		}
+	}
+	return values
+}
+
+// fieldNameKey keys the cache of bindable field names by struct type and source
+// tag (a type binds different names under header vs uri vs form).
+type fieldNameKey struct {
+	t   reflect.Type
+	tag string
+}
+
+// fieldNamesCache maps fieldNameKey -> []string (the cached wire names). The
+// returned slice is shared and must be treated as read-only by callers.
+var fieldNamesCache sync.Map //nolint:gochecknoglobals
+
+// boundFieldNames returns the wire names of every bindable field of t under
+// tagKey (recursing into embedded structs, exactly like the OpenAPI generator),
+// walking the struct once per (type, tag) and caching the result.
+func boundFieldNames(t reflect.Type, tagKey string) []string {
+	key := fieldNameKey{t: t, tag: tagKey}
+	if v, ok := fieldNamesCache.Load(key); ok {
+		return v.([]string)
+	}
+	var names []string
 	rangeFields(t, func(field reflect.StructField) {
 		name := tagName(field, tagKey)
 		if name == "" || name == "-" {
 			return
 		}
-		if vs := get(name); len(vs) > 0 {
-			values[name] = vs
-		}
+		names = append(names, name)
 	})
-	return values
+	fieldNamesCache.Store(key, names)
+	return names
 }
 
 // assignFiles sets *multipart.FileHeader and []*multipart.FileHeader fields
@@ -332,6 +383,8 @@ func badRequest(message string, fields []FieldError) *Error {
 // type names and field namespaces, which the library never forwards to the client
 // (mirroring the 500 path's internal-detail hiding). Fields are sorted so the
 // body is deterministic — DecodeErrors is a map, whose iteration order is random.
+// The raw decoder error is attached as the (unexported) cause so logging
+// middleware can diagnose the failure server-side without it reaching the client.
 func decodeBindError(err error) error {
 	var derrs form.DecodeErrors
 	if errors.As(err, &derrs) {
@@ -340,9 +393,9 @@ func decodeBindError(err error) error {
 			fields = append(fields, FieldError{Field: name, Rule: "invalid", Message: "invalid value"})
 		}
 		slices.SortFunc(fields, func(a, b FieldError) int { return cmp.Compare(a.Field, b.Field) })
-		return badRequest("request binding failed", fields)
+		return badRequest("request binding failed", fields).withCause(err)
 	}
-	return badRequest("request binding failed", nil)
+	return badRequest("request binding failed", nil).withCause(err)
 }
 
 // jsonBindError turns json decode failures into a 400. It reports the wire (json)
@@ -357,15 +410,15 @@ func jsonBindError(err error) error {
 				Field:   typeErr.Field,
 				Rule:    "type",
 				Message: "expected " + jsonTypeName(typeErr.Type),
-			}})
+			}}).withCause(err)
 		}
-		return badRequest("request body has an invalid field type", nil)
+		return badRequest("request body has an invalid field type", nil).withCause(err)
 	}
 	var syntaxErr *json.SyntaxError
 	if errors.As(err, &syntaxErr) {
-		return badRequest("request body is not valid JSON", nil)
+		return badRequest("request body is not valid JSON", nil).withCause(err)
 	}
-	return badRequest("invalid request body", nil)
+	return badRequest("invalid request body", nil).withCause(err)
 }
 
 // jsonTypeName maps the Go type the decoder expected to the JSON type name a

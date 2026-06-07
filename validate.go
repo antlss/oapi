@@ -4,6 +4,7 @@ import (
 	"log"
 	"reflect"
 	"sync"
+	"sync/atomic"
 )
 
 // Validator runs project-defined validation on a freshly bound request part. The
@@ -38,13 +39,22 @@ type Validator interface {
 // json) are separate and not affected.
 var RuleTag = "binding"
 
-// validation is configured once at startup and read on every request. It is not
-// guarded by a lock: install the validator before serving (the documented
-// contract), exactly like the rest of the library's process-wide configuration.
+// validatorState bundles the process-wide validator with whether one was ever
+// installed, so the two are swapped together in a single atomic store. Holding
+// them as separate vars allowed a torn read to pair a freshly installed validator
+// with a stale "configured" flag; bundling them removes that window.
+type validatorState struct {
+	impl       Validator
+	configured bool
+}
+
+// validatorBox holds the process-wide validator state in an atomic.Pointer so the
+// request path reads it lock-free while [SetValidator] swaps it. Reconfiguring the
+// validator under load is therefore race-free (clean under -race), not merely the
+// documented "set once at startup". A nil box means nothing was ever installed.
 var (
-	validatorImpl       Validator
-	validatorConfigured bool
-	noValidatorWarning  sync.Once
+	validatorBox       atomic.Pointer[validatorState]
+	noValidatorWarning sync.Once
 )
 
 // SetValidator installs the process-wide [Validator] used to check every bound
@@ -52,10 +62,20 @@ var (
 // disables validation explicitly (and silences the "no validator configured"
 // warning), which is useful when a service validates elsewhere.
 //
-// It is not safe to call SetValidator concurrently with in-flight requests.
+// The swap is atomic, so calling it while requests are in flight is safe (each
+// request reads either the old or the new validator, never a torn value).
 func SetValidator(v Validator) {
-	validatorImpl = v
-	validatorConfigured = true
+	validatorBox.Store(&validatorState{impl: v, configured: true})
+}
+
+// loadValidator returns the process-wide validator and whether one was installed.
+// When nothing has been set it reports (nil, false), matching the original
+// zero-value behaviour.
+func loadValidator() (Validator, bool) {
+	if s := validatorBox.Load(); s != nil {
+		return s.impl, s.configured
+	}
+	return nil, false
 }
 
 // runValidation applies the configured validator to a freshly bound part. cfg is

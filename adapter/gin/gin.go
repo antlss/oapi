@@ -87,11 +87,14 @@ func toGinPath(path string) string { return path }
 
 // carrier adapts *gin.Context to oapi.Carrier.
 type carrier struct {
-	c        *gin.Context
-	maxBody  int64 // request body cap in bytes; <= 0 means unlimited
-	bodyOnce sync.Once
-	body     []byte
-	bodyErr  error
+	c       *gin.Context
+	maxBody int64 // request body cap in bytes; <= 0 means unlimited
+
+	queryOnce sync.Once
+	query     url.Values
+	bodyOnce  sync.Once
+	body      []byte
+	bodyErr   error
 }
 
 func (a *carrier) Method() string            { return a.c.Request.Method }
@@ -108,7 +111,13 @@ func (a *carrier) Param(name string) string {
 	// catch-all, making `*path` bind identically on every adapter.
 	return strings.TrimPrefix(a.c.Param(name), "/")
 }
-func (a *carrier) Query() url.Values   { return a.c.Request.URL.Query() }
+func (a *carrier) Query() url.Values {
+	// Memoize: url.Query() re-parses the raw query string on each call, so without
+	// this a typed middleware and the handler binding different request shapes would
+	// each re-parse it. Matches the queryOnce caching in the other adapters.
+	a.queryOnce.Do(func() { a.query = a.c.Request.URL.Query() })
+	return a.query
+}
 func (a *carrier) ContentType() string { return a.c.ContentType() }
 
 func (a *carrier) Body() ([]byte, error) {

@@ -212,10 +212,13 @@ func (a *carrier) Body() ([]byte, error) {
 }
 
 func (a *carrier) MultipartForm() (*multipart.Form, error) {
-	// Bound the whole upload the same way Body does. fasthttp buffers the request
-	// before the handler runs, so Request().Header.ContentLength() is the decoded
-	// body size; reject oversized multipart bodies before parsing.
-	if a.maxBody > 0 && int64(a.c.Request().Header.ContentLength()) > a.maxBody {
+	// Bound the upload by the ACTUAL buffered body size, not the declared
+	// Content-Length. fasthttp has already read the whole request into memory
+	// (bounded by fiber.Config.BodyLimit), so len(Body()) is the true size; the
+	// declared length is unreliable — a chunked request reports ContentLength() ==
+	// -1 (which is < any cap, silently bypassing it) and a header value can be
+	// spoofed. len(Body()) closes both gaps and matches the Body() cap above.
+	if a.maxBody > 0 && int64(len(a.c.Body())) > a.maxBody {
 		return nil, errBodyTooLarge
 	}
 	return a.c.MultipartForm()

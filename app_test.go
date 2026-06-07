@@ -123,8 +123,8 @@ func TestApp_PerAppEnvelopeIsIndependent(t *testing.T) {
 
 func TestApp_BackCompatGlobalValidator(t *testing.T) {
 	// Save and restore the process-wide validator so this test does not leak state.
-	savedV, savedSet := validatorImpl, validatorConfigured
-	t.Cleanup(func() { validatorImpl, validatorConfigured = savedV, savedSet })
+	saved := validatorBox.Load()
+	t.Cleanup(func() { validatorBox.Store(saved) })
 
 	SetValidator(errValidator{err: NewValidationError("global reject", nil)})
 
@@ -220,8 +220,8 @@ func TestApp_PerAppErrorParserIsIndependent(t *testing.T) {
 
 func TestApp_ErrorParserBackCompatGlobal(t *testing.T) {
 	// A route without an App must read the process-wide parser at render time.
-	saved := errorParser
-	t.Cleanup(func() { errorParser = saved })
+	saved := errorParserBox.Load()
+	t.Cleanup(func() { errorParserBox.Store(saved) })
 	SetErrorParser(labelParser{label: "global"})
 
 	c := newAppCarrier()
