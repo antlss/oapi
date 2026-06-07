@@ -289,6 +289,19 @@ func (route Route) MaxRequestBytes() (limit int64, ok bool) {
 	return route.cfg.maxBodyBytes, true
 }
 
+// MaxRequestBytesOr returns the route's App-configured request body cap, or
+// fallback when the route inherits no App-level cap. A configured cap of 0 ("no
+// cap") is returned as 0. It is the one-liner every adapter needs to resolve the
+// effective cap from its own package-level DefaultMaxRequestBytes:
+//
+//	cap := route.MaxRequestBytesOr(DefaultMaxRequestBytes)
+func (route Route) MaxRequestBytesOr(fallback int64) int64 {
+	if limit, ok := route.MaxRequestBytes(); ok {
+		return limit
+	}
+	return fallback
+}
+
 // --- shared render helpers (used by handler closures) -----------------------
 
 func writeSuccess[Response any](c Carrier, res *Response, successStatus int, mapper ErrorMapper, env ResponseEnvelope) {

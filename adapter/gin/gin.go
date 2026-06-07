@@ -49,13 +49,9 @@ func RegisterAll(router gin.IRoutes, routes ...oapi.Route) {
 // SpecHandler serves a registry's OpenAPI document as JSON. The document is
 // built once on first request.
 func SpecHandler(reg *oapi.Registry) gin.HandlerFunc {
-	var (
-		once sync.Once
-		raw  []byte
-		err  error
-	)
+	spec := reg.SpecBytesOnce()
 	return func(c *gin.Context) {
-		once.Do(func() { raw, err = reg.JSON() })
+		raw, err := spec()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to render openapi spec"})
 			return
@@ -66,20 +62,10 @@ func SpecHandler(reg *oapi.Registry) gin.HandlerFunc {
 
 func handlerFor(route oapi.Route) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cr := &carrier{c: c, maxBody: maxBodyFor(route)} //nolint:exhaustruct
+		cr := &carrier{c: c, maxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)} //nolint:exhaustruct
 		defer cr.cleanup()
 		route.Invoke(cr)
 	}
-}
-
-// maxBodyFor resolves the body cap for a route: an App-configured per-route cap
-// (route.MaxRequestBytes, where 0 means "no cap") takes precedence over the
-// package-level DefaultMaxRequestBytes fallback. Kept identical across adapters.
-func maxBodyFor(route oapi.Route) int64 {
-	if limit, ok := route.MaxRequestBytes(); ok {
-		return limit
-	}
-	return DefaultMaxRequestBytes
 }
 
 // toGinPath is the identity: the canonical route syntax (:id, *path) is gin's.

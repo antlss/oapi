@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
@@ -375,6 +376,24 @@ func (rg *Registry) JSON() ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// SpecBytesOnce returns a closure that renders the document to indented JSON
+// exactly once and caches the result (bytes or error) for every later call. It
+// is the shared engine behind each adapter's SpecHandler: the adapter keeps only
+// the few framework-specific lines that write the bytes, while the lazy
+// render-once behaviour lives here next to JSON. Each call to SpecBytesOnce gets
+// its own cache, so one per SpecHandler registration.
+func (rg *Registry) SpecBytesOnce() func() ([]byte, error) {
+	var (
+		once sync.Once
+		raw  []byte
+		err  error
+	)
+	return func() ([]byte, error) {
+		once.Do(func() { raw, err = rg.JSON() })
+		return raw, err
+	}
 }
 
 // YAML renders the OpenAPI document as block-style YAML. It round-trips the JSON

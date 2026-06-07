@@ -4,9 +4,9 @@
 //
 // Request body size is bounded by Fiber itself via fiber.Config.BodyLimit
 // (default 4 MiB), which rejects oversized bodies before the handler runs.
-// In addition, this adapter honours an App-configured per-route body cap
-// (route.MaxRequestBytes) and the package-level DefaultMaxRequestBytes so the
-// three adapters agree on the cap; see maxBodyFor and the carrier's read path.
+// In addition, this adapter honours an App-configured per-route body cap and the
+// package-level DefaultMaxRequestBytes so the adapters agree on the cap; see
+// route.MaxRequestBytesOr and the carrier's read path.
 // fasthttp also cleans up multipart temp files automatically at the end of each
 // request.
 package fiber
@@ -79,13 +79,9 @@ func RegisterAll(router fiber.Router, routes ...oapi.Route) {
 
 // SpecHandler serves a registry's OpenAPI document as JSON, built once.
 func SpecHandler(reg *oapi.Registry) fiber.Handler {
-	var (
-		once sync.Once
-		raw  []byte
-		err  error
-	)
+	spec := reg.SpecBytesOnce()
 	return func(c *fiber.Ctx) error {
-		once.Do(func() { raw, err = reg.JSON() })
+		raw, err := spec()
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).
 				JSON(fiber.Map{"message": "failed to render openapi spec"})
@@ -107,20 +103,10 @@ func handlerFor(route oapi.Route) fiber.Handler {
 		// so this is the most cancellation the framework can offer today.
 		c.SetUserContext(c.Context())
 
-		cr := &carrier{c: c, maxBody: maxBodyFor(route)} //nolint:exhaustruct
+		cr := &carrier{c: c, maxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)} //nolint:exhaustruct
 		route.Invoke(cr)
 		return cr.writeErr
 	}
-}
-
-// maxBodyFor resolves the body cap for a route: an App-configured per-route cap
-// (route.MaxRequestBytes, where 0 means "no cap") takes precedence over the
-// package-level DefaultMaxRequestBytes fallback. Kept identical across adapters.
-func maxBodyFor(route oapi.Route) int64 {
-	if limit, ok := route.MaxRequestBytes(); ok {
-		return limit
-	}
-	return DefaultMaxRequestBytes
 }
 
 // toFiberPath converts the canonical route syntax to Fiber's: :id stays, and
