@@ -41,6 +41,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
+          # Resolve the newest 1.25 patch from the manifest instead of reusing
+          # the runner's preinstalled (possibly stale) toolchain.
+          check-latest: true
           cache: true
           cache-dependency-path: "${{ matrix.module }}/go.sum"
 
@@ -66,6 +69,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
+          check-latest: true
           cache: false
 
       - name: gofmt check
@@ -98,6 +102,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
+          check-latest: true
           cache: false
 
       - name: golangci-lint
@@ -126,6 +131,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
+          # govulncheck reports stdlib CVEs against the toolchain version, so we
+          # must build/scan with the newest patched 1.25 release, not the cached one.
+          check-latest: true
           cache: true
           cache-dependency-path: "${{ matrix.module }}/go.sum"
 

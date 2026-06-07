@@ -119,6 +119,53 @@ bounds — comes from the same struct.
 > `oapi.SetValidator(validation.New())` — or the `binding` rules are skipped (with a
 > one-time warning).
 
+### Browse the docs — Swagger UI & Redoc
+
+`/openapi.json` is the raw spec. To make it browsable, serve a tiny HTML page that
+loads that spec into **Swagger UI** (interactive "Try it out") or **Redoc**
+(read-only reference) from a CDN — no extra Go dependency, no embedded assets:
+
+```go
+const swaggerHTML = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Catalog API — Swagger UI</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head>
+<body><div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>window.onload = () => SwaggerUIBundle({url: "/openapi.json", dom_id: "#swagger-ui"})</script>
+</body></html>`
+
+const redocHTML = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Catalog API — Redoc</title></head>
+<body><redoc spec-url="/openapi.json"></redoc>
+<script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script>
+</body></html>`
+
+func htmlPage(html string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(html))
+	}
+}
+```
+
+Mount them next to the spec in `main`. The UIs are plain static HTML, so there's
+nothing `oapi`-specific here — serve the strings with whatever your framework uses
+for an HTML route:
+
+```go
+mux.HandleFunc("GET /openapi.json", nethttp.SpecHandler(reg)) // the spec (from above)
+mux.HandleFunc("GET /swagger", htmlPage(swaggerHTML))         // interactive UI
+mux.HandleFunc("GET /redoc", htmlPage(redocHTML))             // reference docs
+```
+
+Open `http://localhost:8080/swagger` or `/redoc`. Both pages only point at
+`/openapi.json`, so they track the Go types automatically — change a struct, the
+docs change with it.
+
+> `examples/docsui` ships these same pages with **pinned versions + SRI integrity
+> hashes** and a landing page at `/`. Copy that package as-is for production rather
+> than the floating `@5`/`@2` tags shown here.
+
 ## Adapters
 
 The core is framework-agnostic. Every adapter exposes the same surface — `Register`,
@@ -247,6 +294,15 @@ typed middleware, the full error model and custom envelopes. The same routes mou
 on net/http, gin and Fiber under `examples/cmd/{nethttp,gin,fiber}`.
 `examples/cmd/customized` configures the response/error shapes process-wide via
 `Set*`; `examples/cmd/scoped` does it per `App` (two groups, no globals).
+
+Every command serves the spec at `/openapi.json` plus **Swagger UI** (`/swagger`),
+**Redoc** (`/redoc`) and a landing page (`/`) — the ready-made pages in
+`examples/docsui` (CDN-loaded, version-pinned, SRI-hashed). Run one and open the
+root URL:
+
+```sh
+cd examples && go run ./cmd/nethttp   # then open http://localhost:8081
+```
 
 ## License
 
