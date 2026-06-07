@@ -185,66 +185,92 @@ func boundFieldNames(t reflect.Type, tagKey string) []string {
 
 // assignFiles sets *multipart.FileHeader and []*multipart.FileHeader fields
 // (tagged `form`) from the parsed multipart files, recursing into embedded
-// structs.
+// structs. v is the route's Body value (or any struct reachable from it).
 func assignFiles(v reflect.Value, files map[string][]*multipart.FileHeader) {
-	// Normalise a pointer value (e.g. a route declared with a pointer Body type
-	// such as *Form) to the struct it points at, allocating when nil, so the
-	// multipart path does not panic with "reflect: NumField of non-struct type".
+	target, ok := structForFileBinding(v)
+	if !ok {
+		return
+	}
+
+	t := target.Type()
+	for i := range t.NumField() {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		fieldValue := target.Field(i)
+
+		if field.Anonymous && isEmbeddedStruct(field.Type) {
+			assignEmbeddedFiles(fieldValue, field, files)
+			continue
+		}
+		assignFileField(fieldValue, field, files)
+	}
+}
+
+// structForFileBinding normalises v to the struct value whose fields receive the
+// uploaded files. It follows pointer levels (e.g. a route declared with a pointer
+// Body type such as *Form), allocating a settable nil pointer so a file field
+// reachable only through it can still be bound, and reports ok=false when v is
+// not — and cannot become — a struct, so the caller skips it instead of panicking
+// with "reflect: NumField of non-struct type".
+func structForFileBinding(v reflect.Value) (reflect.Value, bool) {
 	for v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			if !v.CanSet() {
-				return
+				return reflect.Value{}, false
 			}
 			v.Set(reflect.New(v.Type().Elem()))
 		}
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
+		return reflect.Value{}, false
+	}
+	return v, true
+}
+
+// isEmbeddedStruct reports whether an embedded field's type is a struct, or a
+// pointer to one — the only embedded shapes that can themselves carry file fields.
+func isEmbeddedStruct(t reflect.Type) bool {
+	dt := deref(t)
+	return dt != nil && dt.Kind() == reflect.Struct
+}
+
+// assignEmbeddedFiles recurses into an embedded struct field. The form decoder
+// leaves an embedded *Struct nil when it had no scalar values to set; this
+// allocates such a pointer only when an upload actually targets a file field
+// inside it, so an unrelated empty embedded struct is never silently materialised.
+func assignEmbeddedFiles(fieldValue reflect.Value, field reflect.StructField, files map[string][]*multipart.FileHeader) {
+	if field.Type.Kind() == reflect.Ptr {
+		if fieldValue.IsNil() {
+			if !fieldValue.CanSet() || !embeddedHasFile(deref(field.Type), files) {
+				return
+			}
+			fieldValue.Set(reflect.New(field.Type.Elem()))
+		}
+		fieldValue = fieldValue.Elem()
+	}
+	assignFiles(fieldValue, files)
+}
+
+// assignFileField sets a single form-tagged file field — a *multipart.FileHeader
+// or a []*multipart.FileHeader — from the uploaded files matching its name. Other
+// fields (no/blank/"-" tag, no matching upload, non-file types) are left untouched.
+func assignFileField(fieldValue reflect.Value, field reflect.StructField, files map[string][]*multipart.FileHeader) {
+	name := tagName(field, tagForm)
+	if name == "" || name == "-" {
 		return
 	}
-
-	t := v.Type()
-	for i := range t.NumField() {
-		field := t.Field(i)
-		if !field.IsExported() {
-			continue
-		}
-		fv := v.Field(i)
-		if field.Anonymous {
-			if ft := deref(field.Type); ft != nil && ft.Kind() == reflect.Struct {
-				if field.Type.Kind() == reflect.Ptr {
-					if fv.IsNil() {
-						// The form decoder leaves an embedded *Struct nil when it has
-						// no scalar values to set; allocate it so a file field that
-						// only lives inside it is still bound — but only when an
-						// upload actually targets it, so an unrelated empty embedded
-						// struct is not silently materialised.
-						if !fv.CanSet() || !embeddedHasFile(ft, files) {
-							continue
-						}
-						fv.Set(reflect.New(field.Type.Elem()))
-					}
-					fv = fv.Elem()
-				}
-				assignFiles(fv, files)
-				continue
-			}
-		}
-
-		name := tagName(field, tagForm)
-		if name == "" || name == "-" {
-			continue
-		}
-		fhs := files[name]
-		if len(fhs) == 0 {
-			continue
-		}
-		switch {
-		case isSingleFileField(field.Type):
-			fv.Set(reflect.ValueOf(fhs[0]))
-		case isFileSliceField(field.Type):
-			fv.Set(reflect.ValueOf(fhs))
-		}
+	fhs := files[name]
+	if len(fhs) == 0 {
+		return
+	}
+	switch {
+	case isSingleFileField(field.Type):
+		fieldValue.Set(reflect.ValueOf(fhs[0]))
+	case isFileSliceField(field.Type):
+		fieldValue.Set(reflect.ValueOf(fhs))
 	}
 }
 
