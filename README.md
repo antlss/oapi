@@ -206,11 +206,18 @@ Also available: `TermsOfService`, `ExternalDocs`, `Logo`/`LogoWith`, `TagGroup`,
 inlining). A `Base` document supplies defaults the generated paths overlay (`Base` /
 `LoadBaseFile`).
 
-Write to disk, or generate from the command line:
+**Write the spec to disk.** `Write` validates first (unless `NoValidate`), then
+emits JSON and/or YAML, returning the paths it wrote:
 
 ```go
-reg.Write(ctx, oapi.GenConfig{Dir: "openapi"}) // openapi.json + openapi.yaml (validated first)
+written, err := reg.Write(ctx, oapi.GenConfig{Dir: "openapi"})
+// -> ["openapi/openapi.json", "openapi/openapi.yaml"], validated before writing
 ```
+
+**Generate it as a CLI / `go generate` step.** `tools/gen_doc` is a turnkey `main`
+that parses flags, validates and writes — so your generator command is one line.
+Drop a `//go:generate` directive next to your routes and the spec is rebuilt with
+`go generate`:
 
 ```go
 //go:generate go run ./cmd/openapi-gen -out ./openapi
@@ -221,8 +228,22 @@ import (
 	"example.com/app/api"
 )
 
-func main() { gendoc.Main(api.Registry()) } // flags: -out -format -base -no-validate
+func main() { gendoc.Main(api.Registry()) } // flags: -out -format json,yaml -base FILE -no-validate
 ```
+
+**See it generate, end to end.** The `examples/` module ships exactly this wiring —
+a real `cmd/openapi-gen`, a `//go:generate` directive in `api/routes.go`, and the
+committed output under `examples/openapi/`. Run it yourself:
+
+```sh
+cd examples
+go run ./cmd/openapi-gen -out ./openapi   # validates, then writes openapi/openapi.{json,yaml}
+go generate ./...                         # the same, via the //go:generate directive
+```
+
+Because the output is committed, regenerating and diffing it in review is how spec
+drift is caught: change a struct, rerun, and the JSON/YAML change with it — or the
+diff tells you a doc went stale.
 
 ## Concepts
 
@@ -262,10 +283,31 @@ The `binding` tag carries validation rules that also become OpenAPI constraints
 
 ### Validation
 
-A pluggable `Validator` installed once with `SetValidator` (or per `App` with
-`WithValidator`). `SetValidator(nil)` disables it explicitly. `RuleTag` (default
-`"binding"`) names the tag both the validator and the generator read. A
-go-playground/validator reference lives in `examples/validation`.
+Validation is a pluggable seam — the core ships **no** validator and depends on no
+validation library, so you choose one (or none) and pull in only what you import.
+
+```go
+// Install once at startup, before serving. The binding rules now run on every request.
+oapi.SetValidator(validation.New())
+```
+
+- **The seam.** Any type implementing `Validator` (`Validate(value any, source string) error`)
+  works. Install it process-wide with `SetValidator`, or scope it to a route group with
+  an `App`'s `WithValidator`. `SetValidator(nil)` disables it explicitly.
+- **If you skip it.** With no validator installed, the `binding` rules are *not*
+  enforced — requests bind and pass through, and the library logs a one-time warning.
+  Schema generation is unaffected: the docs still show the constraints either way.
+- **One tag, two jobs.** `RuleTag` (default `"binding"`) names the tag the validator
+  reads *and* the generator turns into OpenAPI constraints, so a rule like
+  `binding:"required,oneof=USD EUR"` can never validate one thing and document another.
+- **Reference implementation.** `examples/validation` is a ready go-playground/validator
+  adapter (`validation.New()`): one engine per request part, field errors reported by
+  their wire name (`json`/`header`/`uri`/`form`), translated into the library's
+  field-level `400`. Copy it, or implement the one-method seam yourself.
+
+Each runnable example installs it at startup (`oapi.SetValidator(validation.New())`),
+so a request that violates a `binding` rule comes back as a structured `400` you can
+see in Swagger UI.
 
 ### Scoped config (App)
 
