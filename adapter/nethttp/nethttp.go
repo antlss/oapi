@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/antlss/oapi"
-	"github.com/antlss/oapi/internal/httpcarrier"
 )
 
 // Middleware is a standard net/http wrapping middleware.
@@ -57,7 +56,7 @@ func SpecHandler(reg *oapi.Registry) http.HandlerFunc {
 
 func handlerFor(route oapi.Route) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cr := &carrier{Base: &httpcarrier.Base{W: w, R: r, MaxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)}} //nolint:exhaustruct
+		cr := &carrier{HTTPCarrier: &oapi.HTTPCarrier{W: w, R: r, MaxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)}} //nolint:exhaustruct
 		defer cr.Cleanup()
 		route.Invoke(cr)
 	}
@@ -79,10 +78,10 @@ func toStdPath(path string) string {
 }
 
 // carrier adapts net/http to oapi.Carrier. Everything except path-parameter
-// lookup is the shared net/http behaviour in [httpcarrier.Base]; only Param is
+// lookup is the shared net/http behaviour in [oapi.HTTPCarrier]; only Param is
 // net/http-specific (Go 1.22+ ServeMux PathValue).
 type carrier struct {
-	*httpcarrier.Base
+	*oapi.HTTPCarrier
 }
 
 func (a *carrier) Param(name string) string { return a.R.PathValue(name) }

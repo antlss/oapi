@@ -57,10 +57,10 @@ func (ex *execution) cacheGet(key reflect.Type) (any, bool) {
 // cacheSet stores a parsed request under key, keeping the first shape inline and
 // allocating the overflow map only for additional shapes.
 func (ex *execution) cacheSet(key reflect.Type, val any) {
-	switch {
-	case ex.key0 == nil:
+	switch ex.key0 {
+	case nil:
 		ex.key0, ex.val0 = key, val
-	case ex.key0 == key:
+	case key:
 		ex.val0 = val
 	default:
 		if ex.overflow == nil {

@@ -209,7 +209,7 @@ func (rg *Registry) OpenAPI() *openapi3.T {
 		for _, g := range rg.tagGroups {
 			groups = append(groups, map[string]any{"name": g.name, "tags": g.tags})
 		}
-		setExtension(&doc.Extensions, "x-tagGroups", groups)
+		doc.Extensions = setExtension(doc.Extensions, "x-tagGroups", groups)
 	}
 
 	rg.applySecuritySchemes(doc)
@@ -297,7 +297,7 @@ func (rg *Registry) applyInfo(doc *openapi3.T) {
 		info.License = rg.license
 	}
 	if rg.logo != nil {
-		setExtension(&info.Extensions, "x-logo", rg.logo)
+		info.Extensions = setExtension(info.Extensions, "x-logo", rg.logo)
 	}
 }
 
@@ -332,11 +332,12 @@ func (rg *Registry) applySecuritySchemes(doc *openapi3.T) {
 
 // setExtension lazily initialises an Extensions map and sets one vendor
 // extension key (e.g. x-logo, x-tagGroups).
-func setExtension(ext *map[string]any, key string, value any) {
-	if *ext == nil {
-		*ext = map[string]any{}
+func setExtension(ext map[string]any, key string, value any) map[string]any {
+	if ext == nil {
+		ext = map[string]any{}
 	}
-	(*ext)[key] = value
+	ext[key] = value
+	return ext
 }
 
 // cloneDoc returns a deep copy of doc by round-tripping it through JSON, so the

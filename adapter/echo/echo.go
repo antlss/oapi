@@ -11,7 +11,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/antlss/oapi"
-	"github.com/antlss/oapi/internal/httpcarrier"
 )
 
 // DefaultMaxRequestBytes caps how many bytes the adapter reads from a request
@@ -57,8 +56,8 @@ func SpecHandler(reg *oapi.Registry) echo.HandlerFunc {
 func handlerFor(route oapi.Route) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		cr := &carrier{
-			Base: &httpcarrier.Base{W: c.Response(), R: c.Request(), MaxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)}, //nolint:exhaustruct
-			c:    c,
+			HTTPCarrier: &oapi.HTTPCarrier{W: c.Response(), R: c.Request(), MaxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)}, //nolint:exhaustruct
+			c:           c,
 		}
 		defer cr.Cleanup()
 		route.Invoke(cr)
@@ -79,11 +78,11 @@ func toEchoPath(path string) string {
 }
 
 // carrier adapts echo.Context to oapi.Carrier. The read/write plumbing is the
-// shared net/http behaviour in [httpcarrier.Base], seeded from c.Request() /
+// shared net/http behaviour in [oapi.HTTPCarrier], seeded from c.Request() /
 // c.Response(). Only the two methods that go *through* echo.Context are
 // overridden: Param (echo's router) and SetContext (echo owns the request).
 type carrier struct {
-	*httpcarrier.Base
+	*oapi.HTTPCarrier
 	c echo.Context
 }
 
@@ -99,9 +98,10 @@ func (a *carrier) Param(name string) string {
 }
 
 // SetContext swaps the request context. Echo holds the request inside its
-// echo.Context, so the new request must be pushed back via SetRequest; Base.R is
-// then re-synced so the shared methods (Context, Body, writes) see the same one.
+// echo.Context, so the new request must be pushed back via SetRequest;
+// HTTPCarrier.R is then re-synced so the shared methods (Context, Body, writes)
+// see the same one.
 func (a *carrier) SetContext(ctx context.Context) {
 	a.c.SetRequest(a.R.WithContext(ctx))
-	a.Base.R = a.c.Request()
+	a.R = a.c.Request()
 }

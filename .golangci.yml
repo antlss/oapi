@@ -1,82 +1,93 @@
-# golangci-lint configuration for the oapi multi-module workspace.
-# Production-grade but not pedantic: each adapter/example module is linted
-# separately in CI (working-directory per module), so this config is shared by
-# all of them.
-
+# golangci-lint v2 configuration for the oapi multi-module workspace.
+# Production-grade but not pedantic. Each adapter/example module is linted
+# separately in CI (working-directory per module), so this config is shared.
+# Migrated from v1 with `golangci-lint migrate`; pinned to v2 in CI.
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
+    - gocritic
     - govet
-    - staticcheck
+    - ineffassign
     - revive
-    - gofmt
-    - goimports
-    - misspell
+    - staticcheck
     - unconvert
     - unparam
-    - ineffassign
-    - gocritic
-
-linters-settings:
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment # too noisy for readability-first struct layout
-      - shadow         # shadowing err/ctx is idiomatic and intentional here
-
-  revive:
+  settings:
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+        - unnamedResult
+        - ifElseChain
+        - whyNoLint # don't require a reason comment on every //nolint directive
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: var-naming
+        - name: indent-error-flow
+        - name: error-return
+        - name: error-naming
+        - name: context-as-argument
+        - name: receiver-naming
+        - name: unreachable-code
+        - name: redefines-builtin-id
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: exported
-        disabled: false
-      - name: var-naming
-      - name: indent-error-flow
-      - name: error-return
-      - name: error-naming
-      - name: context-as-argument
-      - name: receiver-naming
-      - name: unreachable-code
-      - name: redefines-builtin-id
+      - linters:
+          - errcheck
+          - gocritic
+          - revive
+          - unparam
+        path: _test\.go
+      - linters:
+          - revive
+          - unparam
+        path: tools/
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-    disabled-checks:
-      - hugeParam      # struct sizes here favour clarity over copy cost
-      - rangeValCopy
-      - unnamedResult
-      - ifElseChain
-
-  misspell:
-    locale: US
-
-  goimports:
-    local-prefixes: github.com/antlss/oapi
-
+    # examples/api is illustrative demo code linted as its own module (paths are
+    # module-relative, hence `api/`); relax revive's naming nitpicks there.
+      - linters:
+          - revive
+        path: (^|/)api/
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Tests are allowed to be longer, noisier, and less strictly documented.
-    - path: _test\.go
-      linters:
-        - errcheck
-        - unparam
-        - gocritic
-        - revive
-
-    # Generated / tool entrypoints need a relaxed bar.
-    - path: tools/
-      linters:
-        - revive
-        - unparam
-
-  # Show all issues from a run, not just new ones.
   new: false
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/antlss/oapi
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

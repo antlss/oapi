@@ -10,7 +10,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/antlss/oapi"
-	"github.com/antlss/oapi/internal/httpcarrier"
 )
 
 // Middleware is a standard net/http wrapping middleware, as used by chi.
@@ -62,7 +61,7 @@ func SpecHandler(reg *oapi.Registry) http.HandlerFunc {
 
 func handlerFor(route oapi.Route) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cr := &carrier{Base: &httpcarrier.Base{W: w, R: r, MaxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)}} //nolint:exhaustruct
+		cr := &carrier{HTTPCarrier: &oapi.HTTPCarrier{W: w, R: r, MaxBody: route.MaxRequestBytesOr(DefaultMaxRequestBytes)}} //nolint:exhaustruct
 		defer cr.Cleanup()
 		route.Invoke(cr)
 	}
@@ -84,10 +83,10 @@ func toChiPath(path string) string {
 }
 
 // carrier adapts net/http (driven by chi) to oapi.Carrier. Everything except
-// path-parameter lookup is the shared net/http behaviour in [httpcarrier.Base];
+// path-parameter lookup is the shared net/http behaviour in [oapi.HTTPCarrier];
 // only Param is chi-specific (chi.URLParam, with catch-all fallback).
 type carrier struct {
-	*httpcarrier.Base
+	*oapi.HTTPCarrier
 }
 
 func (a *carrier) Param(name string) string {

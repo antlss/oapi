@@ -267,7 +267,7 @@ func sanitizeErrorStatus(status int) int {
 
 // errorBodyJSON marshals the JSON value an HTTPError wants under "error".
 func errorBodyJSON(he HTTPError) json.RawMessage {
-	var body any = he
+	var body any
 	if eb, ok := he.(ErrorBody); ok {
 		body = eb.ErrorBody()
 	} else {

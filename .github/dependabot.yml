@@ -2,65 +2,106 @@ version: 2
 
 # Multi-module Go workspace: each module has its own go.mod and is tracked
 # independently. GitHub Actions workflows are tracked as a final ecosystem.
+#
+# To keep CI runs (and PR noise) low for a small/solo project, minor+patch
+# updates are batched into a single grouped PR per ecosystem each week, and the
+# open-PR limit is kept modest. Major updates still open their own PRs.
+# (Dependabot config does not support YAML anchors, so entries are explicit.)
 updates:
   - package-ecosystem: gomod
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - go
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: gomod
     directory: "/adapter/gin"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - go
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: gomod
     directory: "/adapter/fiber"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - go
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: gomod
     directory: "/adapter/chi"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - go
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: gomod
     directory: "/adapter/echo"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - go
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: gomod
     directory: "/examples"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - go
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - github-actions
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
