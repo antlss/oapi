@@ -3,7 +3,7 @@ module github.com/antlss/oapi/adapter/chi
 go 1.25.0
 
 require (
-	github.com/antlss/oapi v0.0.0
+	github.com/antlss/oapi v0.1.0
 	github.com/go-chi/chi/v5 v5.1.0
 )
 
@@ -23,5 +23,3 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/antlss/oapi => ../..

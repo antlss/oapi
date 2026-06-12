@@ -3,7 +3,7 @@ module github.com/antlss/oapi/adapter/gin
 go 1.25.0
 
 require (
-	github.com/antlss/oapi v0.0.0
+	github.com/antlss/oapi v0.1.0
 	github.com/gin-gonic/gin v1.12.0
 )
 
@@ -51,5 +51,3 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/antlss/oapi => ../..

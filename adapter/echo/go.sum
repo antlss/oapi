@@ -1,3 +1,5 @@
+github.com/antlss/oapi v0.1.0 h1:Sg0yJI+TR/8c22eBEZ4xw/bYR+hhjAhdO27tyNwWYJM=
+github.com/antlss/oapi v0.1.0/go.mod h1:ygLEUz7OfwP6UdcgG8oXO2OAAd2Wzl4H/TBOfAacL04=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dlclark/regexp2 v1.11.0 h1:G/nrcoOa7ZXlpoa/91N3X7mM3r8eIlMBBJZvsz/mxKI=
